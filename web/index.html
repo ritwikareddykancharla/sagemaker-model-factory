@@ -988,7 +988,7 @@
           <span class="section-kicker">02 · Architecture</span>
           <h2 class="section-title">Architecture</h2>
           <p class="section-desc">
-            Static UI assets are served by Amazon CloudFront from a private S3 bucket via Origin Access Control, while <code>/api/*</code> routes invoke Python 3.12 on AWS Lambda backed by SQLite WAL and Amazon Bedrock. Click any node below to inspect its module, contract boundary, and measured latency.
+            Static UI assets are served by Amazon CloudFront from a private S3 bucket via Origin Access Control, while <code>/api/*</code> routes invoke AWS Lambda backed by SQLite WAL and Amazon Bedrock. Click any node below to inspect its module, contract boundary, and measured latency.
           </p>
         </div>
       </div>
@@ -1019,7 +1019,7 @@
 
           <!-- LAYER 1: BROWSER & SERVERLESS AWS EDGE -->
           <path d="M 22,18 Q 610,14 1196,19 Q 1201,92 1195,164 Q 608,168 24,163 Q 19,90 22,18 Z" fill="#FAFAFA" stroke="#71717A" stroke-width="1.6" stroke-dasharray="8 6" />
-          <text x="36" y="41" class="svg-title" font-size="21" font-weight="700" fill="#059669">① Browser Studio &amp; Serverless AWS Edge (CloudFront + Private S3 OAC + Python 3.12 Lambda)</text>
+          <text x="36" y="41" class="svg-title" font-size="21" font-weight="700" fill="#059669">① Browser Studio &amp; Serverless AWS Edge (CloudFront + Private S3 OAC + AWS Lambda)</text>
 
           <g class="arch-node" data-arch-node="edge-browser" tabindex="0">
             <path d="M 38,55 Q 136,52 234,56 Q 238,96 233,138 Q 135,141 39,137 Q 35,95 38,55 Z" fill="#DBEAFE" />
@@ -1059,7 +1059,7 @@
           <g class="arch-node" data-arch-node="edge-lambda" tabindex="0">
             <path d="M 640,100 Q 775,97 910,101 Q 913,127 909,153 Q 774,156 641,152 Q 637,126 640,100 Z" fill="#FFE8D6" />
             <path class="arch-stroke-main" d="M 640,100 Q 775,97 910,101 Q 913,127 909,153 Q 774,156 641,152 Q 637,126 640,100 Z" fill="none" stroke="#18181B" stroke-width="2" />
-            <text x="775" y="123" text-anchor="middle" class="svg-title" font-size="20" font-weight="700" fill="#18181B">AWS Lambda API (Python 3.12)</text>
+            <text x="775" y="123" text-anchor="middle" class="svg-title" font-size="20" font-weight="700" fill="#18181B">AWS Lambda API</text>
             <text x="775" y="142" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#9A3412">sage_factory/server.py · 512 MB</text>
           </g>
 
@@ -1194,7 +1194,7 @@
           <span class="section-kicker">03 · Implementation</span>
           <h2 class="section-title">Implementation</h2>
           <p class="section-desc">
-            SageFactory is structured as five cohesive Python 3.12 modules covering typed DAG compilation, content-addressed step caching, fenced multi-rank checkpointing, live Amazon Bedrock evaluation gating, and serverless API routing.
+            SageFactory is structured as five cohesive AWS Lambda modules covering typed DAG compilation, content-addressed step caching, fenced multi-rank checkpointing, live Amazon Bedrock evaluation gating, and serverless API routing.
           </p>
         </div>
         <span class="tag tag-pass">12 / 12 Unit Tests Passing</span>
@@ -1322,7 +1322,7 @@
           <span class="section-kicker">05 · Live Demo</span>
           <h2 class="section-title">Live Demo</h2>
           <p class="section-desc">
-            All four interactive tabs execute against the live <code>/api/*</code> Python 3.12 backend to compile typed SDK recipes, test content-addressed step caching, recover torn multi-rank checkpoints, and gate model promotions on Amazon Bedrock.
+            All four interactive tabs execute against the live <code>/api/*</code> serverless backend to compile typed SDK recipes, test content-addressed step caching, recover torn multi-rank checkpoints, and gate model promotions on Amazon Bedrock.
           </p>
         </div>
         <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
@@ -1883,10 +1883,10 @@
         },
         "edge-lambda": {
           plane: "Layer ① · Browser Studio & Serverless Edge",
-          title: "AWS Lambda Python 3.12 API Origin",
+          title: "AWS Lambda API Origin",
           module: "sage_factory/server.py :: lambda_handler",
           summary: "Executes /api/pipeline/compile, /api/pipeline/execute, /api/checkpoint/recover, /api/registry/evaluate, /api/benchmarks, and /api/reset on demand with 512 MB RAM and 30s timeout.",
-          metric: "Python 3.12 · Serverless On-Demand"
+          metric: "AWS Lambda · Serverless On-Demand"
         },
         "compiler-sdk": {
           plane: "Layer ② · Typed SDK & Contract Compiler",

@@ -11,7 +11,7 @@
 
   <!-- LAYER 1: BROWSER & SERVERLESS AWS EDGE -->
   <path d="M 22,18 Q 610,14 1196,19 Q 1201,92 1195,164 Q 608,168 24,163 Q 19,90 22,18 Z" fill="#FAFAFA" stroke="#71717A" stroke-width="1.6" stroke-dasharray="8 6" />
-  <text x="36" y="41" font-family="Georgia, serif" font-size="18" font-weight="700" fill="#059669">1. Browser Studio &amp; Serverless AWS Edge (CloudFront + Private S3 OAC + Python 3.12 Lambda)</text>
+  <text x="36" y="41" font-family="Georgia, serif" font-size="18" font-weight="700" fill="#059669">1. Browser Studio &amp; Serverless AWS Edge (CloudFront + Private S3 OAC + AWS Lambda)</text>
 
   <rect x="38" y="55" width="198" height="84" fill="#DBEAFE" stroke="#18181B" stroke-width="2.1" />
   <text x="137" y="83" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="800" fill="#18181B">ML Engineer Browser</text>
@@ -34,7 +34,7 @@
   <text x="775" y="79" text-anchor="middle" font-family="monospace" font-size="9.4" fill="#065F46">web/index.html · BlockPublicAccess</text>
 
   <rect x="640" y="101" width="270" height="52" fill="#FEF3C7" stroke="#18181B" stroke-width="2" />
-  <text x="775" y="123" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="800" fill="#18181B">AWS Lambda API (Python 3.12)</text>
+  <text x="775" y="123" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="800" fill="#18181B">AWS Lambda API</text>
   <text x="775" y="142" text-anchor="middle" font-family="monospace" font-size="9.4" fill="#92400E">sage_factory/server.py · 512 MB</text>
 
   <rect x="934" y="42" width="244" height="108" fill="#FEF3C7" stroke="#18181B" stroke-width="2" />

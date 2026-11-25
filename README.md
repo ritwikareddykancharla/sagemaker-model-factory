@@ -4,7 +4,7 @@
 - **Live `/api/health` Endpoint**: https://d1682kl3ju6dgk.cloudfront.net/api/health
 - **GitHub Repository**: https://github.com/ritwikareddykancharla/sagemaker-model-factory
 
-SageFactory is a Python 3.12 control plane for contract-validated MLOps pipeline orchestration, content-addressed step memoization, fenced multi-rank checkpoint recovery, and automated canary model promotion, deployed serverlessly on **Amazon CloudFront + Private S3 (OAC) + AWS Lambda (`python3.12`) + SQLite WAL + Amazon Bedrock (`us.amazon.nova-lite-v1:0`)**.
+SageFactory is a serverless control plane for contract-validated MLOps pipeline orchestration, content-addressed step memoization, fenced multi-rank checkpoint recovery, and automated canary model promotion, deployed serverlessly on **Amazon CloudFront + Private S3 (OAC) + AWS Lambda (serverless) + SQLite WAL + Amazon Bedrock (`us.amazon.nova-lite-v1:0`)**.
 
 ![SageFactory System Architecture](docs/architecture.svg)
 
