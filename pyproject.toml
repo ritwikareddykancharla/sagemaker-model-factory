@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-factory"
+version = "1.0.0"
+description = "SageFactory: Typed MLOps Pipeline DAG Compiler, SHA-256 Step Cache, Fenced Checkpoint Recovery, and Live Bedrock Model Registry"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Ritwika Reddy Kancharla" }]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sage_factory*"]

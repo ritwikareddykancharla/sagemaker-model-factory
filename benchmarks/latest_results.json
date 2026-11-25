@@ -1,0 +1,377 @@
+{
+  "service": "sagemaker-model-factory",
+  "benchmark_timestamp_utc": "2026-11-25T23:11:50Z",
+  "environment": {
+    "python_version": "3.14.6",
+    "platform": "Darwin 25.6.0 (arm64)",
+    "bedrock_model": "us.amazon.nova-lite-v1:0",
+    "aws_region": "us-west-2",
+    "state_store": "SQLite WAL + Content-Addressed Artifact Store + Two-Phase Atomic Shards"
+  },
+  "headline_kpis": {
+    "dag_specs_tested": 12,
+    "contract_bugs_total": 10,
+    "contract_bugs_caught": 10,
+    "contract_catch_rate_pct": 100.0,
+    "dag_compile_p50_ms": 0.084,
+    "dag_compile_p95_ms": 0.12,
+    "cold_upstream_4step_ms": 4957.595,
+    "cold_local_3step_ms": 4957.414,
+    "warm_upstream_4step_p50_ms": 0.893,
+    "step_cache_lookup_p50_ms": 0.213,
+    "step_cache_lookup_p95_ms": 0.286,
+    "step_cache_speedup_x": 5551.6,
+    "cascade_invalidation_verified": true,
+    "checkpoint_drills_total": 12,
+    "checkpoint_drills_verified": 12,
+    "checkpoint_recovery_rate_pct": 100.0,
+    "zombie_writes_blocked": 12,
+    "zombie_block_rate_pct": 100.0,
+    "max_abs_weight_diff": 0.0,
+    "shard_verify_p50_ms": 1.3,
+    "checkpoint_recovery_p50_ms": 4.796,
+    "checkpoint_recovery_p95_ms": 5.305,
+    "registry_evals_total": 6,
+    "registry_gate_correct": 6,
+    "registry_gate_accuracy_pct": 100.0,
+    "bad_models_promoted": 0,
+    "bedrock_calls_measured": 24,
+    "bedrock_latency_p50_ms": 436.5,
+    "bedrock_latency_p95_ms": 1417.05,
+    "bedrock_mean_tokens": 158.1,
+    "bedrock_total_tokens": 3795
+  },
+  "compiler_contract_results": [
+    {
+      "probe_id": "DAG-VALID-01",
+      "label": "6-Step Diamond SFT + Parallel Eval (PyTorchJob)",
+      "expect_valid": true,
+      "observed_valid": true,
+      "expected_rule": "VALID",
+      "triggered_rules": [
+        "VALID"
+      ],
+      "compile_ms": 0.151,
+      "passed": true
+    },
+    {
+      "probe_id": "DAG-VALID-02",
+      "label": "5-Step RLVR Reasoning (verl GRPO RayJob)",
+      "expect_valid": true,
+      "observed_valid": true,
+      "expected_rule": "VALID",
+      "triggered_rules": [
+        "VALID"
+      ],
+      "compile_ms": 0.093,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-CYCLE-01",
+      "label": "Feedback Loop (register_model -> fsdp_finetune)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-CYCLE-01",
+      "triggered_rules": [
+        "DAG-CYCLE-01"
+      ],
+      "compile_ms": 0.095,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-CYCLE-02",
+      "label": "Mutual Gate Cycle (bedrock_eval <-> quality_gate)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-CYCLE-01",
+      "triggered_rules": [
+        "DAG-CYCLE-01"
+      ],
+      "compile_ms": 0.086,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-ART-03",
+      "label": "Missing Upstream Artifact Port (missing_parquet_v9)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-ARTIFACT-02",
+      "triggered_rules": [
+        "DAG-ARTIFACT-02"
+      ],
+      "compile_ms": 0.085,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-ART-04",
+      "label": "Dangling Upstream Step Reference (undeclared_etl)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-ARTIFACT-02",
+      "triggered_rules": [
+        "DAG-ARTIFACT-02"
+      ],
+      "compile_ms": 0.084,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-SCHEMA-05",
+      "label": "Storage Format Mismatch (csv vs jsonl)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-SCHEMA-03",
+      "triggered_rules": [
+        "DAG-SCHEMA-03"
+      ],
+      "compile_ms": 0.08,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-SCHEMA-06",
+      "label": "Tensor Dtype Mismatch (float32 vs bfloat16)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-SCHEMA-03",
+      "triggered_rules": [
+        "DAG-SCHEMA-03"
+      ],
+      "compile_ms": 0.08,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-SCHEMA-07",
+      "label": "Missing RLVR Column (reward_rubric omitted)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-SCHEMA-03",
+      "triggered_rules": [
+        "DAG-SCHEMA-03"
+      ],
+      "compile_ms": 0.071,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-SCHEMA-08",
+      "label": "Tokenizer Vocab Mismatch (32000 != 128256)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-SCHEMA-03",
+      "triggered_rules": [
+        "DAG-SCHEMA-03"
+      ],
+      "compile_ms": 0.079,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-TOPO-09",
+      "label": "3D Parallelism World-Size Mismatch (TP*PP*DP=16 != 8)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-TOPOLOGY-04",
+      "triggered_rules": [
+        "DAG-TOPOLOGY-04"
+      ],
+      "compile_ms": 0.078,
+      "passed": true
+    },
+    {
+      "probe_id": "BUG-TOPO-10",
+      "label": "Accelerator HBM Overflow (94.5 GB > 80.0 GB)",
+      "expect_valid": false,
+      "observed_valid": false,
+      "expected_rule": "DAG-TOPOLOGY-04",
+      "triggered_rules": [
+        "DAG-TOPOLOGY-04"
+      ],
+      "compile_ms": 0.083,
+      "passed": true
+    }
+  ],
+  "step_cache_scenarios": [
+    {
+      "iteration": "Iter-1 (Cold Pipeline Build)",
+      "mutation": "Initial full 6-step materialization",
+      "hits": 0,
+      "misses": 6,
+      "total_ms": 4967.542,
+      "upstream_4step_ms": 4957.595
+    },
+    {
+      "iteration": "Iter-2 (Tweak ConditionStep min_quality=0.80)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 4,
+      "misses": 2,
+      "total_ms": 8.054,
+      "upstream_4step_ms": 1.022
+    },
+    {
+      "iteration": "Iter-3 (Cosmetic Comment Edit in DataPrep AST)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 6,
+      "misses": 0,
+      "total_ms": 6.438,
+      "upstream_4step_ms": 0.851
+    },
+    {
+      "iteration": "Iter-4 (Tweak ConditionStep min_quality=0.82)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 6,
+      "misses": 0,
+      "total_ms": 6.144,
+      "upstream_4step_ms": 0.832
+    },
+    {
+      "iteration": "Iter-5 (Cosmetic Comment Edit in DataPrep AST)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 6,
+      "misses": 0,
+      "total_ms": 8.129,
+      "upstream_4step_ms": 0.924
+    },
+    {
+      "iteration": "Iter-6 (Tweak ConditionStep min_quality=0.84)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 4,
+      "misses": 2,
+      "total_ms": 7.272,
+      "upstream_4step_ms": 0.861
+    },
+    {
+      "iteration": "Iter-7 (Cosmetic Comment Edit in DataPrep AST)",
+      "mutation": "Downstream gate / cosmetic comment only",
+      "hits": 6,
+      "misses": 0,
+      "total_ms": 6.548,
+      "upstream_4step_ms": 0.939
+    },
+    {
+      "iteration": "Iter-8 (Mutate DataPrep dataset_version='v2.5-reindexed')",
+      "mutation": "Root dataset SHA-256 changed -> full Merkle cascade invalidation",
+      "hits": 0,
+      "misses": 6,
+      "total_ms": 4294.797,
+      "upstream_4step_ms": 4285.342
+    }
+  ],
+  "checkpoint_recovery_matrix": [
+    {
+      "fault_mode": "torn_rank_shard",
+      "title": "Truncated Rank-2 Shard Bytes Mid-Write",
+      "runs": 4,
+      "verified_runs": 4,
+      "restored_from_step": 6,
+      "verify_p50_ms": 1.416,
+      "recovery_p50_ms": 5.165,
+      "recovery_p95_ms": 5.306,
+      "max_abs_weight_diff": 0.0
+    },
+    {
+      "fault_mode": "uncommitted_manifest_crash",
+      "title": "Coordinator Crash Before _COMMITTED_MANIFEST",
+      "runs": 4,
+      "verified_runs": 4,
+      "restored_from_step": 6,
+      "verify_p50_ms": 1.3,
+      "recovery_p50_ms": 4.947,
+      "recovery_p95_ms": 5.166,
+      "max_abs_weight_diff": 0.0
+    },
+    {
+      "fault_mode": "stale_zombie_epoch_write",
+      "title": "Preempted Worker Split-Brain Write (Stale Epoch)",
+      "runs": 4,
+      "verified_runs": 4,
+      "restored_from_step": 9,
+      "verify_p50_ms": 0.46,
+      "recovery_p50_ms": 2.242,
+      "recovery_p95_ms": 2.495,
+      "max_abs_weight_diff": 0.0
+    }
+  ],
+  "bedrock_registry_results": [
+    {
+      "eval_run": "EVAL-RUN-01",
+      "version_id": "mdl-1914bf3b3f",
+      "candidate_id": "cand-nova-rag-sft-v2",
+      "display_name": "Nova Lite Grounded MLOps Adapter v2.4",
+      "quality_score": 1.0,
+      "p50_latency_ms": 703.0,
+      "p95_latency_ms": 1136.8,
+      "safety_passed": true,
+      "condition_gate_passed": true,
+      "deployment_stage": "Production",
+      "total_tokens": 681,
+      "matched_expected_gate": true
+    },
+    {
+      "eval_run": "EVAL-RUN-02",
+      "version_id": "mdl-19c15dbc64",
+      "candidate_id": "cand-nova-canary-v2.5",
+      "display_name": "Nova Lite Canary Release Candidate v2.5",
+      "quality_score": 1.0,
+      "p50_latency_ms": 763.0,
+      "p95_latency_ms": 1550.5,
+      "safety_passed": true,
+      "condition_gate_passed": true,
+      "deployment_stage": "Canary_10Pct",
+      "total_tokens": 579,
+      "matched_expected_gate": true
+    },
+    {
+      "eval_run": "EVAL-RUN-03",
+      "version_id": "mdl-cd5b437c40",
+      "candidate_id": "cand-nova-uncalibrated-v3",
+      "display_name": "Uncalibrated Draft Adapter v3.0 (Regression Probe)",
+      "quality_score": 0.383,
+      "p50_latency_ms": 357.0,
+      "p95_latency_ms": 470.4,
+      "safety_passed": true,
+      "condition_gate_passed": false,
+      "deployment_stage": "Rejected",
+      "total_tokens": 192,
+      "matched_expected_gate": true
+    },
+    {
+      "eval_run": "EVAL-RUN-04",
+      "version_id": "mdl-8e3dd7dfdf",
+      "candidate_id": "cand-nova-rag-sft-v2",
+      "display_name": "Nova Lite Grounded MLOps Adapter v2.4",
+      "quality_score": 1.0,
+      "p50_latency_ms": 659.0,
+      "p95_latency_ms": 811.1,
+      "safety_passed": true,
+      "condition_gate_passed": true,
+      "deployment_stage": "Production",
+      "total_tokens": 592,
+      "matched_expected_gate": true
+    },
+    {
+      "eval_run": "EVAL-RUN-05",
+      "version_id": "mdl-f668c17aff",
+      "candidate_id": "cand-nova-canary-v2.5",
+      "display_name": "Nova Lite Canary Release Candidate v2.5",
+      "quality_score": 1.0,
+      "p50_latency_ms": 617.0,
+      "p95_latency_ms": 1373.9,
+      "safety_passed": true,
+      "condition_gate_passed": true,
+      "deployment_stage": "Canary_10Pct",
+      "total_tokens": 584,
+      "matched_expected_gate": true
+    },
+    {
+      "eval_run": "EVAL-RUN-06",
+      "version_id": "mdl-35049db9bb",
+      "candidate_id": "cand-nova-uncalibrated-v3",
+      "display_name": "Uncalibrated Draft Adapter v3.0 (Regression Probe)",
+      "quality_score": 0.525,
+      "p50_latency_ms": 312.0,
+      "p95_latency_ms": 321.9,
+      "safety_passed": true,
+      "condition_gate_passed": false,
+      "deployment_stage": "Rejected",
+      "total_tokens": 196,
+      "matched_expected_gate": true
+    }
+  ]
+}

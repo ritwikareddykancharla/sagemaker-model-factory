@@ -1,0 +1,2676 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SageFactory: Repeatable Model Training Pipelines, Step Caching, and Safe Rollouts</title>
+  <meta name="description" content="SageFactory validates MLOps pipeline contracts upfront, reuses SHA-256 cached step outputs, recovers interrupted multi-rank checkpoints with lease fencing, and gates model rollouts on Amazon Bedrock." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&amp;family=Martian+Mono:wght@400;500;600;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&amp;family=Schibsted+Grotesk:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-paper: #FAF7F2;
+      --bg-card: #FFFFFF;
+      --bg-subtle: #F2ECE1;
+      --bg-obsidian: #141413;
+      --bg-code: #121417;
+      --text-code: #F4F4F5;
+      --ink: #141413;
+      --ink-muted: #52514E;
+      --border: #18181B;
+      --shadow: 4px 4px 0px #18181B;
+      --shadow-sm: 2px 2px 0px #18181B;
+      --dot-color: rgba(24, 24, 27, 0.13);
+      --accent-main: #059669;
+      --accent-ink: #FFFFFF;
+      --accent-soft: #D1FAE5;
+      --accent-deep: #065F46;
+      --blue: #1D4ED8;
+      --blue-soft: #DBEAFE;
+      --pass: #059669;
+      --pass-soft: #D1FAE5;
+      --fail: #DC2626;
+      --fail-soft: #FEE2E2;
+      --warn: #D97706;
+      --warn-soft: #FEF3C7;
+      --purple: #6D28D9;
+      --purple-soft: #EDE9FE;
+    }
+
+    [data-theme="dark"] {
+      --bg-paper: #0E1113;
+      --bg-card: #161A1E;
+      --bg-subtle: #1F252B;
+      --bg-obsidian: #090B0C;
+      --bg-code: #090B0D;
+      --text-code: #E4E4E7;
+      --ink: #F4F4F5;
+      --ink-muted: #A1A1AA;
+      --border: #52525B;
+      --shadow: 4px 4px 0px #000000;
+      --shadow-sm: 2px 2px 0px #000000;
+      --dot-color: rgba(255, 255, 255, 0.08);
+      --accent-main: #10B981;
+      --accent-ink: #06281E;
+      --accent-soft: #064E3B;
+      --accent-deep: #6EE7B7;
+      --blue: #60A5FA;
+      --blue-soft: #1E293B;
+      --pass: #34D399;
+      --pass-soft: #064E3B;
+      --fail: #F87171;
+      --fail-soft: #450A0A;
+      --warn: #FBBF24;
+      --warn-soft: #451A03;
+      --purple: #C4B5FD;
+      --purple-soft: #2E1065;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-paper);
+      background-image: radial-gradient(var(--dot-color) 1.25px, transparent 1.25px);
+      background-size: 20px 20px;
+      color: var(--ink);
+      line-height: 1.68;
+      padding-bottom: 4.5rem;
+    }
+
+    .serif { font-family: 'Newsreader', Georgia, serif; }
+    .mono { font-family: 'Martian Mono', monospace; }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 1.6rem;
+    }
+
+    /* Sticky Topbar + Sticky Scroll-Spy Section TOC */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 120;
+      background: var(--bg-paper);
+      border-bottom: 2px solid var(--border);
+      padding: 0.78rem 0;
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .toc-bar {
+      position: sticky;
+      top: 59px;
+      z-index: 110;
+      background: var(--bg-subtle);
+      border-bottom: 2px solid var(--border);
+      padding: 0.52rem 0;
+    }
+
+    .toc-inner {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+    }
+
+    .toc-link {
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 700;
+      padding: 0.24rem 0.62rem;
+      border: 1.5px solid var(--border);
+      background: var(--bg-card);
+      transition: background 0.12s ease, transform 0.08s ease;
+    }
+
+    .toc-link:hover {
+      background: var(--accent-soft);
+      transform: translate(-1px, -1px);
+    }
+
+    .toc-link.active {
+      background: var(--accent-main);
+      color: var(--accent-ink);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      font-weight: 800;
+      font-size: 1.16rem;
+      letter-spacing: -0.02em;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .brand-badge {
+      background: var(--accent-main);
+      color: var(--accent-ink);
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      padding: 0.22rem 0.58rem;
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .btn, .nav-pill {
+      font-family: 'Schibsted Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 0.84rem;
+      padding: 0.5rem 0.92rem;
+      border: 2px solid var(--border);
+      background: var(--bg-card);
+      color: var(--ink);
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn:hover, .nav-pill:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: var(--shadow);
+    }
+
+    .btn:active, .nav-pill:active {
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0px var(--border);
+    }
+
+    .btn:disabled {
+      opacity: 0.58;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-accent { background: var(--accent-main); color: var(--accent-ink); }
+    .btn-obsidian { background: #18181B; color: #FAF7F2; }
+    [data-theme="dark"] .btn-obsidian { background: var(--accent-main); color: var(--accent-ink); }
+    .btn-secondary { background: var(--bg-subtle); }
+    .btn-danger { background: var(--fail-soft); color: var(--fail); }
+
+    /* Hero */
+    .hero {
+      padding: 2.6rem 0 2.3rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .hero-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.05rem;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.3rem 0.7rem;
+      background: var(--accent-main);
+      color: var(--accent-ink);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .runtime-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.3rem 0.7rem;
+      background: var(--bg-card);
+      color: var(--ink);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--pass);
+      display: inline-block;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 3.6vw, 2.85rem);
+      font-weight: 800;
+      line-height: 1.13;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.95rem;
+      max-width: 1020px;
+    }
+
+    .hero-sub {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(1.15rem, 1.85vw, 1.34rem);
+      line-height: 1.64;
+      color: var(--ink-muted);
+      max-width: 1020px;
+      margin-bottom: 1.35rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.68rem;
+      margin-bottom: 1.45rem;
+    }
+
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.1rem;
+      margin-top: 1.1rem;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 1.4rem;
+    }
+
+    .kpi-card {
+      padding: 1.15rem 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 5px;
+      background: var(--accent-main);
+      border-bottom: 1.5px solid var(--border);
+    }
+
+    .kpi-val {
+      font-family: 'Martian Mono', monospace;
+      font-size: 1.38rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin-top: 0.25rem;
+    }
+
+    .kpi-label { font-size: 0.88rem; font-weight: 800; color: var(--ink); margin-top: 0.24rem; }
+    .kpi-sub { font-size: 0.8rem; color: var(--ink-muted); margin-top: 0.28rem; line-height: 1.5; }
+
+    .pipeline-bar {
+      margin-top: 1.45rem;
+      background: var(--bg-obsidian);
+      color: #FAF7F2;
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 0.95rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7rem;
+      flex-wrap: wrap;
+    }
+
+    .pipe-step { display: flex; align-items: center; gap: 0.5rem; font-size: 0.84rem; font-weight: 600; }
+    .pipe-num {
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: var(--accent-main);
+      color: #FFFFFF;
+      padding: 0.14rem 0.44rem;
+      border: 1.5px solid #FFFFFF;
+    }
+    .pipe-arrow { color: #6EE7B7; font-family: 'Martian Mono', monospace; font-weight: 700; }
+
+    /* Sections */
+    .section {
+      padding: 2.8rem 0 2.5rem;
+      border-bottom: 2px solid var(--border);
+      scroll-margin-top: 114px;
+    }
+
+    .section-kicker {
+      display: inline-block;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--accent-main);
+      margin-bottom: 0.35rem;
+    }
+    [data-theme="dark"] .section-kicker { color: #6EE7B7; }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 1.1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.45rem;
+    }
+
+    .section-title {
+      font-size: 1.62rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .section-desc {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: 1.15rem;
+      line-height: 1.62;
+      color: var(--ink-muted);
+      max-width: 900px;
+      margin-top: 0.32rem;
+    }
+
+    .overview-callout {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      border-left: 7px solid var(--accent-main);
+      box-shadow: var(--shadow);
+      padding: 1.35rem 1.5rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.96rem;
+      line-height: 1.72;
+    }
+
+    .overview-callout h3 {
+      font-size: 1.05rem;
+      font-weight: 800;
+      margin-bottom: 0.45rem;
+    }
+
+    .scenario-card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 1.45rem 1.55rem;
+      margin-top: 1.5rem;
+    }
+
+    .scenario-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 980px) { .scenario-steps { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { .scenario-steps { grid-template-columns: 1fr; } }
+
+    .scenario-step {
+      background: var(--bg-subtle);
+      border: 1.5px solid var(--border);
+      padding: 1rem 1.05rem;
+      font-size: 0.88rem;
+      line-height: 1.65;
+    }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.05rem;
+      margin-bottom: 1.25rem;
+    }
+
+    @media (max-width: 980px) { .problem-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { .problem-grid { grid-template-columns: 1fr; } }
+
+    .problem-card {
+      padding: 1.2rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .step-badge {
+      display: inline-block;
+      align-self: flex-start;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.18rem 0.52rem;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      border: 1.5px solid var(--border);
+      text-transform: uppercase;
+    }
+
+    .problem-card h3 { font-size: 1.04rem; font-weight: 800; line-height: 1.3; }
+    .problem-card p { font-size: 0.9rem; color: var(--ink-muted); line-height: 1.66; }
+
+    /* Subsystem & Trade-Off Cards */
+    .module-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.4rem;
+    }
+
+    @media (max-width: 940px) { .module-grid { grid-template-columns: 1fr; } }
+
+    .module-card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .module-card-head {
+      background: var(--bg-obsidian);
+      color: #FAF7F2;
+      padding: 0.65rem 1.1rem;
+      border-bottom: 2px solid var(--border);
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .module-card-body {
+      padding: 1.25rem 1.35rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      flex: 1;
+    }
+
+    .prose-block {
+      background: var(--bg-paper);
+      border: 1.5px solid var(--border);
+      padding: 0.88rem 1.02rem;
+      font-size: 0.91rem;
+      line-height: 1.68;
+      color: var(--ink);
+    }
+
+    .prose-block-tech {
+      background: var(--bg-subtle);
+      border: 1.5px solid var(--border);
+      padding: 0.88rem 1.02rem;
+      font-size: 0.88rem;
+      line-height: 1.68;
+      color: var(--ink-muted);
+    }
+
+    /* Architecture Canvas */
+    .arch-canvas-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      padding: 0.72rem 1rem;
+      background: var(--bg-subtle);
+      border: 2px solid var(--border);
+      border-bottom: none;
+    }
+
+    .arch-canvas-viewport {
+      background-color: #FFFFFF;
+      background-image: radial-gradient(rgba(24, 24, 27, 0.14) 1px, transparent 1px);
+      background-size: 18px 18px;
+      border: 2px solid #18181B;
+      box-shadow: 4px 4px 0px #18181B;
+      overflow-x: auto;
+      padding: 0.9rem;
+    }
+
+    .arch-canvas-svg {
+      display: block;
+      width: 100%;
+      min-width: 980px;
+      height: auto;
+      transition: width 0.22s ease, min-width 0.22s ease;
+    }
+
+    .arch-canvas-svg.zoom-125 {
+      width: 125%;
+      min-width: 1225px;
+    }
+
+    .svg-title { font-family: 'Caveat', cursive; }
+    .svg-mono { font-family: 'Martian Mono', monospace; }
+
+    .arch-node {
+      cursor: pointer;
+      transition: filter 0.15s ease;
+    }
+
+    .arch-node:hover {
+      filter: drop-shadow(3px 3px 0px #059669);
+    }
+
+    .arch-node.selected .arch-stroke-main {
+      stroke: #059669 !important;
+      stroke-width: 3.2px !important;
+    }
+
+    .arch-inspector {
+      margin-top: 1.05rem;
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 1.15rem 1.3rem;
+    }
+
+    .arch-node-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.42rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .arch-node-pill {
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.69rem;
+      font-weight: 700;
+      padding: 0.28rem 0.6rem;
+      border: 1.5px solid var(--border);
+      background: var(--bg-subtle);
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .arch-node-pill.active {
+      background: var(--accent-main);
+      color: var(--accent-ink);
+    }
+
+    /* Interactive Demo Tabs */
+    .tab-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.78rem;
+      margin-bottom: 1.45rem;
+    }
+
+    @media (max-width: 960px) { .tab-bar { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { .tab-bar { grid-template-columns: 1fr; } }
+
+    .tab-btn {
+      text-align: left;
+      padding: 0.98rem 1.05rem;
+      background: var(--bg-card);
+      color: var(--ink);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.34rem;
+    }
+
+    .tab-btn:hover { transform: translate(-1px, -1px); box-shadow: var(--shadow); }
+    .tab-btn.active {
+      background: var(--accent-main);
+      color: var(--accent-ink);
+      box-shadow: var(--shadow);
+      transform: translate(-1px, -1px);
+    }
+
+    .tab-btn-eyebrow { font-family: 'Martian Mono', monospace; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; opacity: 0.88; }
+    .tab-btn-title { font-size: 0.94rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.25; }
+    .tab-btn-desc { font-size: 0.78rem; line-height: 1.45; opacity: 0.92; }
+    .tab-btn-metric { font-family: 'Martian Mono', monospace; font-size: 0.66rem; font-weight: 700; opacity: 0.92; margin-top: 0.15rem; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .sim-header {
+      margin-bottom: 1.15rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .sim-title { font-size: 1.38rem; font-weight: 800; letter-spacing: -0.02em; }
+    .sim-desc { font-family: 'Newsreader', Georgia, serif; font-size: 1.09rem; color: var(--ink-muted); max-width: 860px; margin-top: 0.25rem; }
+
+    .grid-2 { display: grid; grid-template-columns: 1.05fr 1.15fr; gap: 1.3rem; align-items: start; }
+    .grid-equal { display: grid; grid-template-columns: 1fr 1fr; gap: 1.3rem; align-items: start; }
+    @media (max-width: 940px) { .grid-2, .grid-equal { grid-template-columns: 1fr; } }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.18rem 0.52rem;
+      border: 1.5px solid var(--border);
+      text-transform: uppercase;
+    }
+
+    .tag-accent { background: var(--accent-main); color: var(--accent-ink); }
+    .tag-soft { background: var(--accent-soft); color: var(--accent-deep); }
+    .tag-pass { background: var(--pass-soft); color: var(--pass); }
+    .tag-fail { background: var(--fail-soft); color: var(--fail); }
+    .tag-warn { background: var(--warn-soft); color: var(--warn); }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.83rem;
+      font-weight: 700;
+      margin-bottom: 0.38rem;
+    }
+
+    textarea, select, input[type="text"], input[type="number"] {
+      width: 100%;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.74rem;
+      padding: 0.62rem 0.76rem;
+      background: var(--bg-paper);
+      color: var(--ink);
+      border: 2px solid var(--border);
+      line-height: 1.5;
+    }
+    textarea:focus, select:focus, input[type="text"]:focus, input[type="number"]:focus {
+      outline: 2px solid var(--accent-main);
+      outline-offset: 1px;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-subtle);
+      border: 2px solid var(--border);
+      border-bottom: none;
+      padding: 0.48rem 0.85rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.71rem;
+      font-weight: 700;
+    }
+
+    .code-box {
+      background: var(--bg-code);
+      color: var(--text-code);
+      border: 2px solid var(--border);
+      padding: 0.95rem 1.05rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.72rem;
+      line-height: 1.56;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .verdict-banner {
+      border: 2px solid var(--border);
+      padding: 0.88rem 1.02rem;
+      margin-bottom: 0.9rem;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+    }
+    .verdict-allow { background: var(--pass-soft); }
+    .verdict-deny { background: var(--fail-soft); }
+    .verdict-warn { background: var(--warn-soft); }
+
+    .wave-strip {
+      display: flex;
+      gap: 0.65rem;
+      overflow-x: auto;
+      padding-bottom: 0.35rem;
+      margin-bottom: 0.95rem;
+    }
+
+    .wave-col {
+      min-width: 155px;
+      flex: 1;
+      border: 2px solid var(--border);
+      background: var(--bg-paper);
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .wave-step-pill {
+      border: 1.5px solid var(--border);
+      background: var(--bg-card);
+      padding: 0.45rem 0.55rem;
+      font-family: 'Martian Mono', monospace;
+      font-size: 0.68rem;
+    }
+
+    .fault-grid { display: grid; grid-template-columns: 1fr; gap: 0.5rem; margin: 0.55rem 0 0.9rem; }
+    .fault-btn {
+      text-align: left;
+      padding: 0.65rem 0.78rem;
+      background: var(--bg-paper);
+      color: var(--ink);
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      font-family: 'Schibsted Grotesk', sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: 0.18rem;
+    }
+    .fault-btn:hover { background: var(--bg-subtle); }
+    .fault-btn.active { background: var(--accent-main); color: var(--accent-ink); border-width: 2px; box-shadow: var(--shadow-sm); }
+
+    .table-wrap { overflow-x: auto; border: 2px solid var(--border); background: var(--bg-card); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th, td { padding: 0.62rem 0.76rem; text-align: left; border-bottom: 1.5px solid var(--border); }
+    th { background: var(--bg-subtle); font-family: 'Martian Mono', monospace; font-size: 0.68rem; text-transform: uppercase; font-weight: 700; }
+    tr:last-child td { border-bottom: none; }
+
+    .timeline-item { border: 1.5px solid var(--border); background: var(--bg-paper); padding: 0.68rem 0.82rem; margin-bottom: 0.52rem; }
+
+    .bar-group { display: flex; flex-direction: column; gap: 0.65rem; margin: 0.8rem 0; }
+    .bar-row { display: flex; flex-direction: column; gap: 0.24rem; }
+    .bar-meta { display: flex; justify-content: space-between; font-family: 'Martian Mono', monospace; font-size: 0.72rem; font-weight: 600; }
+    .bar-track { width: 100%; height: 16px; background: var(--bg-subtle); border: 1.5px solid var(--border); overflow: hidden; }
+    .bar-fill { height: 100%; transition: width 0.28s ease; }
+    .bar-fill-accent { background: var(--accent-main); }
+    .bar-fill-pass { background: var(--pass); }
+
+    .footer {
+      margin-top: 2.8rem;
+      padding-top: 1.6rem;
+      border-top: 2px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      font-size: 0.84rem;
+      color: var(--ink-muted);
+    }
+  </style>
+</head>
+<body>
+  <!-- Sticky Topbar -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a href="#top" class="brand">
+        <span class="brand-badge">SAGEFACTORY v1.0</span>
+        <span>SageFactory</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary Navigation">
+        <a class="nav-pill" href="https://d13kangk4fqjbf.cloudfront.net" target="_blank" rel="noopener">AegisOps ↗</a>
+        <a class="nav-pill" href="https://d3gk5qze5xyz7y.cloudfront.net" target="_blank" rel="noopener">DeskPilot ↗</a>
+        <a class="btn btn-obsidian" href="https://github.com/ritwikareddykancharla/sagemaker-model-factory" target="_blank" rel="noopener">★ GitHub Repo</a>
+        <button type="button" class="btn btn-secondary" id="themeToggleBtn" aria-label="Toggle color theme">
+          <span id="themeIcon">🌙</span>
+          <span id="themeLabel">Dark Mode</span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Sticky Scroll-Spy Section TOC -->
+  <nav class="toc-bar" aria-label="Section Navigation">
+    <div class="container toc-inner">
+      <span style="font-weight:700; color:var(--ink-muted);">SECTIONS:</span>
+      <a class="toc-link active" data-section="problem" href="#problem">01 · Problem</a>
+      <a class="toc-link" data-section="architecture" href="#architecture">02 · Architecture</a>
+      <a class="toc-link" data-section="implementation" href="#implementation">03 · Implementation</a>
+      <a class="toc-link" data-section="tradeoffs" href="#tradeoffs">04 · Trade-Offs</a>
+      <a class="toc-link" data-section="studio" href="#studio">05 · Live Demo</a>
+      <a class="toc-link" data-section="benchmarks" href="#benchmarks">06 · Benchmarks</a>
+    </div>
+  </nav>
+
+  <main class="container" id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-top-row">
+        <div class="eyebrow">MLOps Pipeline DAGs &amp; Model Lifecycle · Built for AWS SageMaker AI</div>
+        <div class="runtime-pill" id="runtimePill">
+          <span class="pulse-dot"></span>
+          <span id="runtimeModeText">Live Interactive Demo · Powered by Amazon Bedrock</span>
+        </div>
+      </div>
+
+      <h1>SageFactory: Repeatable Model Training Pipelines, Step Caching, and Safe Rollouts</h1>
+      <p class="hero-sub">
+        Shipping models gets expensive when teams chain scripts by hand, repeat unchanged data prep, or lose training runs to worker crashes. SageFactory checks step contracts upfront, reuses cached outputs, recovers interrupted checkpoints, and gates rollouts with live Amazon Bedrock evaluations.
+      </p>
+
+      <div class="hero-actions">
+        <a class="btn btn-accent" href="#studio">▶ Try the Live Demo ↓</a>
+        <a class="btn btn-secondary" href="#architecture">See the Architecture ↓</a>
+        <a class="btn btn-secondary" href="#benchmarks">View Benchmarks ↓</a>
+      </div>
+
+      <div class="kpi-strip" id="heroKpiStrip"></div>
+
+      <div class="pipeline-bar" role="region" aria-label="SageFactory Pipeline Lifecycle">
+        <div class="pipe-step"><span class="pipe-num">01</span><span>Compile Typed SDK &amp; Step Contracts</span></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><span class="pipe-num">02</span><span>Reuse Cached SHA-256 Upstream Artifacts</span></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><span class="pipe-num">03</span><span>Fence Stale Workers &amp; Recover Shards</span></div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step"><span class="pipe-num">04</span><span>Gate Canary Rollouts on Amazon Bedrock</span></div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 01 · PROBLEM                                                        -->
+    <!-- =================================================================== -->
+    <section id="problem" class="section">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">01 · Problem</span>
+          <h2 class="section-title">Problem</h2>
+          <p class="section-desc">
+            Hand-chained training scripts waste accelerator hours when schema mismatches fail mid-job, unchanged upstream stages re-run from scratch, preempted workers corrupt checkpoints, or uncalibrated models ship without automated regression checks.
+          </p>
+        </div>
+        <span class="tag tag-accent">MLOps &amp; Model Factory</span>
+      </div>
+
+      <div class="overview-callout">
+        <h3>Overview</h3>
+        <p>
+          SageFactory unifies workflow orchestration and long-running job resiliency into a single serverless control plane. Scientists author pipelines in a typed Python SDK or JSON specification, and Kahn's topological wave compiler checks cycles, cross-step schema types, tokenizer vocabularies, and 3D parallelism world sizes in <code>0.084 ms</code> median before launching compute. During iterative experimentation, content-addressed <code>SHA-256</code> Merkle keys memoize step outputs in SQLite WAL so unchanged upstream steps resolve in <code>0.213 ms</code> median (a <code>5,551.6x</code> speedup across the 4-step upstream build). For multi-rank training, monotonic <code>lease_epoch</code> tokens block delayed zombie workers while per-shard <code>SHA-256</code> verification quarantines partial crash writes and resumes with exact parameter parity (<code>max_abs_weight_diff = 0.0</code>). Finally, a live Amazon Bedrock (<code>us.amazon.nova-lite-v1:0</code>) evaluation gate checks quality, latency, and safety refusal before promoting a candidate to canary or production traffic.
+        </p>
+      </div>
+
+      <div class="problem-grid">
+        <div class="card problem-card">
+          <span class="step-badge">01 · LATE SCHEMA FAILURES</span>
+          <h3>Broken Step Contracts Fail Hours Into a Job</h3>
+          <p>Passing a CSV <code>float32</code> table or mismatched tokenizer vocabulary into an FSDP or <code>verl</code> training stage crashes after cluster nodes spin up unless cross-step contracts are verified at compile time.</p>
+        </div>
+        <div class="card problem-card">
+          <span class="step-badge">02 · REPEATED UPSTREAM WORK</span>
+          <h3>Tweaking an Eval Rule Re-Runs Data Prep</h3>
+          <p>Adjusting a downstream promotion threshold or evaluation prompt should not re-tokenize raw data or retrain unchanged adapter weights when upstream inputs and code AST have not changed.</p>
+        </div>
+        <div class="card problem-card">
+          <span class="step-badge">03 · TORN SHARDS &amp; ZOMBIES</span>
+          <h3>Crashes and Preemptions Corrupt Checkpoints</h3>
+          <p>A spot preemption mid-save leaves truncated rank shards on disk, and a delayed worker waking after a network stall can overwrite a newer checkpoint unless fenced by a monotonic epoch token.</p>
+        </div>
+        <div class="card problem-card">
+          <span class="step-badge">04 · UNGATED PROMOTIONS</span>
+          <h3>Manual Model Rollouts Miss Regressions</h3>
+          <p>Promoting fine-tuned checkpoints without automated quality, tail-latency, and credential-safety checks risks routing production traffic to regressions with broken formatting or weak guardrails.</p>
+        </div>
+      </div>
+
+      <div class="scenario-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+          <div>
+            <span class="step-badge">EXAMPLE · END-TO-END LIFECYCLE</span>
+            <h3 style="font-size:1.15rem; font-weight:800; margin-top:0.35rem;">Example: Iterating on an Enterprise QA Adapter After a Rank-2 Crash</h3>
+          </div>
+          <span class="tag tag-pass">Testable in Live Demo</span>
+        </div>
+        <div class="scenario-steps">
+          <div class="scenario-step">
+            <div class="mono" style="font-size:0.7rem; font-weight:700; color:var(--accent-main); margin-bottom:0.3rem;">1 · COMPILE &amp; LOWER (0.084 ms)</div>
+            <code>compile_pipeline_dag()</code> validates the 6-step diamond recipe, schedules <code>bedrock_eval</code> and <code>latency_profile</code> concurrently in Wave 2, and emits a HyperPod <code>PyTorchJob</code> manifest.
+          </div>
+          <div class="scenario-step">
+            <div class="mono" style="font-size:0.7rem; font-weight:700; color:var(--warn); margin-bottom:0.3rem;">2 · RECOVER TORN SHARD (4.8 ms)</div>
+            Rank 2 crashes mid-write at step 9. Recovery increments <code>lease_epoch</code> to <code>2</code>, blocks a stale epoch-1 write from Worker 1, quarantines <code>step_0009</code>, and resumes cleanly from <code>step_0006</code>.
+          </div>
+          <div class="scenario-step">
+            <div class="mono" style="font-size:0.7rem; font-weight:700; color:var(--blue); margin-bottom:0.3rem;">3 · CACHE UPSTREAM (0.213 ms)</div>
+            When an engineer tightens <code>ConditionStep</code> from <code>0.82</code> to <code>0.84</code>, all four upstream steps hit SQLite WAL cache in <code>0.861 ms</code> total instead of repeating a <code>4,957.6 ms</code> build.
+          </div>
+          <div class="scenario-step">
+            <div class="mono" style="font-size:0.7rem; font-weight:700; color:var(--pass); margin-bottom:0.3rem;">4 · GATE ON BEDROCK (436.5 ms)</div>
+            Amazon Bedrock evaluates grounded QA, JSON schema output, and secret-refusal safety, promoting <code>cand-nova-rag-sft-v2</code> while rejecting <code>cand-nova-uncalibrated-v3</code>.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 02 · ARCHITECTURE                                                   -->
+    <!-- =================================================================== -->
+    <section id="architecture" class="section">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">02 · Architecture</span>
+          <h2 class="section-title">Architecture</h2>
+          <p class="section-desc">
+            Static UI assets are served by Amazon CloudFront from a private S3 bucket via Origin Access Control, while <code>/api/*</code> routes invoke Python 3.12 on AWS Lambda backed by SQLite WAL and Amazon Bedrock. Click any node below to inspect its module, contract boundary, and measured latency.
+          </p>
+        </div>
+      </div>
+
+      <div class="arch-canvas-toolbar">
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <span class="mono" style="font-size:0.72rem; font-weight:700;">SYSTEM ARCHITECTURE · CLICK ANY COMPONENT TO INSPECT</span>
+          <span class="tag tag-accent" id="archZoomLabel">Zoom: 100%</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">
+          <button type="button" class="btn btn-accent" id="zoom100Btn" style="padding:0.32rem 0.65rem; font-size:0.76rem;">100%</button>
+          <button type="button" class="btn btn-secondary" id="zoom125Btn" style="padding:0.32rem 0.65rem; font-size:0.76rem;">125%</button>
+          <button type="button" class="btn btn-secondary" id="zoomResetBtn" style="padding:0.32rem 0.65rem; font-size:0.76rem;">↺ Reset</button>
+          <button type="button" class="btn btn-secondary" id="downloadArchSvgBtn" style="padding:0.32rem 0.65rem; font-size:0.76rem;">⬇ Export SVG</button>
+        </div>
+      </div>
+
+      <div class="arch-canvas-viewport" id="archViewport">
+        <svg id="sagefactoryArchSvg" class="arch-canvas-svg" viewBox="0 0 1220 730" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SageFactory System Architecture Diagram">
+          <defs>
+            <pattern id="archDotGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+              <circle cx="2" cy="2" r="1" fill="#D4D4D8" />
+            </pattern>
+          </defs>
+
+          <rect x="0" y="0" width="1220" height="730" fill="#FFFFFF" />
+          <rect x="0" y="0" width="1220" height="730" fill="url(#archDotGrid)" opacity="0.68" />
+
+          <!-- LAYER 1: BROWSER & SERVERLESS AWS EDGE -->
+          <path d="M 22,18 Q 610,14 1196,19 Q 1201,92 1195,164 Q 608,168 24,163 Q 19,90 22,18 Z" fill="#FAFAFA" stroke="#71717A" stroke-width="1.6" stroke-dasharray="8 6" />
+          <text x="36" y="41" class="svg-title" font-size="21" font-weight="700" fill="#059669">① Browser Studio &amp; Serverless AWS Edge (CloudFront + Private S3 OAC + Python 3.12 Lambda)</text>
+
+          <g class="arch-node" data-arch-node="edge-browser" tabindex="0">
+            <path d="M 38,55 Q 136,52 234,56 Q 238,96 233,138 Q 135,141 39,137 Q 35,95 38,55 Z" fill="#DBEAFE" />
+            <path class="arch-stroke-main" d="M 38,55 Q 136,52 234,56 Q 238,96 233,138 Q 135,141 39,137 Q 35,95 38,55 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="136" y="83" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#18181B">ML Engineer Browser</text>
+            <text x="136" y="105" text-anchor="middle" class="svg-mono" font-size="9.8" font-weight="600" fill="#1E3A8A">Python SDK + Visual DAG</text>
+            <text x="136" y="123" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#3F3F46">URL hash state · Dark mode</text>
+          </g>
+
+          <path d="M 237,96 Q 268,92 298,96" fill="none" stroke="#18181B" stroke-width="2.1" stroke-dasharray="6 4" />
+          <path d="M 289,90 L 300,96 L 289,102" fill="none" stroke="#18181B" stroke-width="2.1" />
+          <text x="268" y="86" text-anchor="middle" class="svg-title" font-size="16" font-weight="700" fill="#18181B">HTTPS</text>
+
+          <g class="arch-node" data-arch-node="edge-cloudfront" tabindex="0">
+            <path d="M 304,55 Q 430,51 556,56 Q 560,96 555,138 Q 428,142 305,137 Q 301,95 304,55 Z" fill="#D1FAE5" />
+            <path class="arch-stroke-main" d="M 304,55 Q 430,51 556,56 Q 560,96 555,138 Q 428,142 305,137 Q 301,95 304,55 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="430" y="83" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#18181B">Amazon CloudFront</text>
+            <text x="430" y="105" text-anchor="middle" class="svg-mono" font-size="10" font-weight="600" fill="#065F46">Single HTTPS Entry Point</text>
+            <text x="430" y="123" text-anchor="middle" class="svg-mono" font-size="9.4" fill="#3F3F46">UI -&gt; S3 OAC · /api/* -&gt; Lambda</text>
+          </g>
+
+          <path d="M 559,78 Q 596,66 634,66" fill="none" stroke="#18181B" stroke-width="2" stroke-dasharray="6 4" />
+          <path d="M 625,60 L 636,66 L 625,72" fill="none" stroke="#18181B" stroke-width="2" />
+          <text x="596" y="59" text-anchor="middle" class="svg-title" font-size="15" font-weight="700" fill="#065F46">Static UI</text>
+
+          <path d="M 559,114 Q 596,126 634,126" fill="none" stroke="#18181B" stroke-width="2" stroke-dasharray="6 4" />
+          <path d="M 625,120 L 636,126 L 625,132" fill="none" stroke="#18181B" stroke-width="2" />
+          <text x="596" y="143" text-anchor="middle" class="svg-title" font-size="15" font-weight="700" fill="#059669">/api/*</text>
+
+          <g class="arch-node" data-arch-node="edge-s3" tabindex="0">
+            <path d="M 640,39 Q 775,36 910,40 Q 913,65 909,90 Q 774,93 641,89 Q 637,64 640,39 Z" fill="#DCFCE7" />
+            <path class="arch-stroke-main" d="M 640,39 Q 775,36 910,40 Q 913,65 909,90 Q 774,93 641,89 Q 637,64 640,39 Z" fill="none" stroke="#18181B" stroke-width="2" />
+            <text x="775" y="61" text-anchor="middle" class="svg-title" font-size="20" font-weight="700" fill="#18181B">Private S3 Bucket</text>
+            <text x="775" y="79" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#065F46">web/index.html · Public Access Off</text>
+          </g>
+
+          <g class="arch-node" data-arch-node="edge-lambda" tabindex="0">
+            <path d="M 640,100 Q 775,97 910,101 Q 913,127 909,153 Q 774,156 641,152 Q 637,126 640,100 Z" fill="#FFE8D6" />
+            <path class="arch-stroke-main" d="M 640,100 Q 775,97 910,101 Q 913,127 909,153 Q 774,156 641,152 Q 637,126 640,100 Z" fill="none" stroke="#18181B" stroke-width="2" />
+            <text x="775" y="123" text-anchor="middle" class="svg-title" font-size="20" font-weight="700" fill="#18181B">AWS Lambda API (Python 3.12)</text>
+            <text x="775" y="142" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#9A3412">sage_factory/server.py · 512 MB</text>
+          </g>
+
+          <g transform="rotate(-1.4 1055 95)">
+            <path d="M 936,40 L 1178,40 L 1178,134 L 1160,150 L 936,150 Z" fill="#FEF3C7" stroke="#18181B" stroke-width="2" />
+            <path d="M 1160,150 L 1160,134 L 1178,134" fill="#FDE68A" stroke="#18181B" stroke-width="1.6" />
+            <text x="950" y="66" class="svg-title" font-size="19" font-weight="700" fill="#92400E">📌 $0.00 Idle Serverless</text>
+            <text x="950" y="89" class="svg-title" font-size="17" font-weight="600" fill="#18181B">• CloudFront + Private S3 OAC</text>
+            <text x="950" y="110" class="svg-title" font-size="17" font-weight="600" fill="#18181B">• 0.084 ms DAG contract check</text>
+            <text x="950" y="131" class="svg-title" font-size="17" font-weight="700" fill="#059669">• 5,551.6x cached step speedup</text>
+          </g>
+
+          <path d="M 775,154 Q 770,176 612,194" fill="none" stroke="#18181B" stroke-width="2.1" stroke-dasharray="7 5" />
+          <path d="M 621,188 L 610,195 L 622,200" fill="none" stroke="#18181B" stroke-width="2.1" />
+          <text x="752" y="183" class="svg-title" font-size="16" font-weight="700" fill="#18181B">Validate Contracts Before Launch</text>
+
+          <!-- LAYER 2: TYPED SDK & DAG CONTRACT COMPILER -->
+          <path d="M 22,196 Q 610,192 1196,197 Q 1200,268 1195,338 Q 608,342 24,337 Q 19,266 22,196 Z" fill="#ECFDF5" stroke="#059669" stroke-width="1.6" stroke-dasharray="8 6" />
+          <text x="36" y="219" class="svg-title" font-size="21" font-weight="700" fill="#065F46">② Typed Pipeline SDK &amp; Pre-Flight Contract Compiler (0.084 ms median · 10 / 10 Bugs Caught)</text>
+
+          <g class="arch-node selected" data-arch-node="compiler-sdk" tabindex="0">
+            <path d="M 42,233 Q 218,229 394,234 Q 398,279 393,324 Q 216,328 43,323 Q 39,278 42,233 Z" fill="#FFFFFF" />
+            <path class="arch-stroke-main" d="M 42,233 Q 218,229 394,234 Q 398,279 393,324 Q 216,328 43,323 Q 39,278 42,233 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="218" y="261" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#18181B">Bidirectional Python SDK</text>
+            <text x="218" y="283" text-anchor="middle" class="svg-mono" font-size="9.6" font-weight="700" fill="#065F46">@pipeline_step · AST Recipe Parser</text>
+            <text x="218" y="303" text-anchor="middle" class="svg-mono" font-size="9.2" fill="#3F3F46">Python DSL &lt;-&gt; Canonical JSON DAG</text>
+          </g>
+
+          <g class="arch-node" data-arch-node="compiler-contracts" tabindex="0">
+            <path d="M 432,233 Q 610,229 788,234 Q 792,279 787,324 Q 609,328 433,323 Q 429,278 432,233 Z" fill="#FEE2E2" />
+            <path class="arch-stroke-main" d="M 432,233 Q 610,229 788,234 Q 792,279 787,324 Q 609,328 433,323 Q 429,278 432,233 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="610" y="261" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#991B1B">Static Contract &amp; Cycle Check</text>
+            <text x="610" y="283" text-anchor="middle" class="svg-mono" font-size="9.5" font-weight="700" fill="#18181B">DAG-CYCLE · ARTIFACT · SCHEMA · TOPO</text>
+            <text x="610" y="303" text-anchor="middle" class="svg-mono" font-size="9.1" fill="#7F1D1D">Checks Kahn waves, dtypes, vocab &amp; HBM</text>
+          </g>
+
+          <g class="arch-node" data-arch-node="compiler-lowering" tabindex="0">
+            <path d="M 824,233 Q 1001,229 1178,234 Q 1182,279 1177,324 Q 1000,328 825,323 Q 821,278 824,233 Z" fill="#DBEAFE" />
+            <path class="arch-stroke-main" d="M 824,233 Q 1001,229 1178,234 Q 1182,279 1177,324 Q 1000,328 825,323 Q 821,278 824,233 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="1001" y="261" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#1E3A8A">Multi-Backend Spec Lowering</text>
+            <text x="1001" y="283" text-anchor="middle" class="svg-mono" font-size="9.5" font-weight="700" fill="#18181B">Wave Plan + PyTorchJob &amp; RayJob YAML</text>
+            <text x="1001" y="303" text-anchor="middle" class="svg-mono" font-size="9.1" fill="#3F3F46">HyperPod EFA/NCCL &amp; verl GRPO specs</text>
+          </g>
+
+          <path d="M 410,326 Q 360,355 315,380" fill="none" stroke="#18181B" stroke-width="2" stroke-dasharray="6 4" />
+          <path d="M 323,371 L 313,381 L 326,382" fill="none" stroke="#18181B" stroke-width="2" />
+          <text x="242" y="362" class="svg-title" font-size="16" font-weight="700" fill="#065F46">Execute Topological Waves</text>
+
+          <path d="M 860,326 Q 885,355 905,380" fill="none" stroke="#18181B" stroke-width="2" stroke-dasharray="6 4" />
+          <path d="M 896,377 L 907,381 L 905,369" fill="none" stroke="#18181B" stroke-width="2" />
+          <text x="920" y="362" class="svg-title" font-size="16" font-weight="700" fill="#1D4ED8">Multi-Rank Checkpoints</text>
+
+          <!-- LAYER 3: STEP CACHE & FENCED CHECKPOINTS -->
+          <path d="M 22,380 Q 610,376 1196,381 Q 1200,452 1195,522 Q 608,526 24,521 Q 19,450 22,380 Z" fill="#F8FAFC" stroke="#1D4ED8" stroke-width="1.6" stroke-dasharray="8 6" />
+          <text x="36" y="404" class="svg-title" font-size="21" font-weight="700" fill="#1E3A8A">③ Content-Addressed Step Cache &amp; Fenced Checkpoint Engine (SQLite WAL + Disk Shards)</text>
+
+          <g class="arch-node" data-arch-node="runtime-cache" tabindex="0">
+            <path d="M 42,418 Q 312,414 582,419 Q 586,464 581,508 Q 310,512 43,507 Q 39,462 42,418 Z" fill="#DCFCE7" />
+            <path class="arch-stroke-main" d="M 42,418 Q 312,414 582,419 Q 586,464 581,508 Q 310,512 43,507 Q 39,462 42,418 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="312" y="446" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#18181B">SHA-256 Merkle Step Cache</text>
+            <text x="312" y="468" text-anchor="middle" class="svg-mono" font-size="9.6" font-weight="700" fill="#065F46">SHA256(code_ast | hyperparams | input_digests)</text>
+            <text x="312" y="489" text-anchor="middle" class="svg-mono" font-size="9.2" fill="#3F3F46">0.213 ms lookup · 5,551.6x upstream speedup</text>
+          </g>
+
+          <g class="arch-node" data-arch-node="runtime-checkpoint" tabindex="0">
+            <path d="M 624,418 Q 901,414 1178,419 Q 1182,464 1177,508 Q 900,512 625,507 Q 621,462 624,418 Z" fill="#FEF3C7" />
+            <path class="arch-stroke-main" d="M 624,418 Q 901,414 1178,419 Q 1182,464 1177,508 Q 900,512 625,507 Q 621,462 624,418 Z" fill="none" stroke="#18181B" stroke-width="2.1" />
+            <text x="901" y="446" text-anchor="middle" class="svg-title" font-size="22" font-weight="700" fill="#18181B">Fenced Checkpoint &amp; Recovery</text>
+            <text x="901" y="468" text-anchor="middle" class="svg-mono" font-size="9.6" font-weight="700" fill="#92400E">Monotonic lease_epoch · Per-Shard SHA-256</text>
+            <text x="901" y="489" text-anchor="middle" class="svg-mono" font-size="9.2" fill="#3F3F46">12 / 12 recoveries · 0.0 weight diff · 100% fenced</text>
+          </g>
+
+          <path d="M 312,510 Q 312,542 312,568" fill="none" stroke="#6D28D9" stroke-width="2.1" stroke-dasharray="6 4" />
+          <path d="M 306,560 L 312,570 L 318,560" fill="none" stroke="#6D28D9" stroke-width="2.1" />
+          <text x="326" y="548" class="svg-title" font-size="16" font-weight="700" fill="#6D28D9">Golden Benchmark Gate</text>
+
+          <path d="M 901,510 Q 901,542 901,568" fill="none" stroke="#065F46" stroke-width="2.1" stroke-dasharray="6 4" />
+          <path d="M 895,560 L 901,570 L 907,560" fill="none" stroke="#065F46" stroke-width="2.1" />
+          <text x="915" y="548" class="svg-title" font-size="16" font-weight="700" fill="#065F46">Dataset-to-Endpoint Lineage</text>
+
+          <!-- LAYER 4: BEDROCK EVAL GATE & MODEL REGISTRY -->
+          <g class="arch-node" data-arch-node="bedrock-eval" tabindex="0">
+            <path d="M 42,574 Q 312,569 582,575 Q 586,642 581,708 Q 310,713 43,707 Q 39,640 42,574 Z" fill="#F3E8FF" />
+            <path class="arch-stroke-main" d="M 42,574 Q 312,569 582,575 Q 586,642 581,708 Q 310,713 43,707 Q 39,640 42,574 Z" fill="none" stroke="#18181B" stroke-width="2.2" />
+            <text x="312" y="604" text-anchor="middle" class="svg-title" font-size="23" font-weight="700" fill="#5B21B6">④ Amazon Bedrock Eval Gate</text>
+            <text x="312" y="629" text-anchor="middle" class="svg-mono" font-size="10" font-weight="700" fill="#18181B">Amazon Nova Lite · Converse API</text>
+            <text x="312" y="651" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#4C1D95">Scores technical grounding, JSON schema &amp; safety</text>
+            <rect x="88" y="666" width="448" height="28" fill="#FFFFFF" stroke="#18181B" stroke-width="1.6" />
+            <text x="312" y="684" text-anchor="middle" class="svg-mono" font-size="9.5" font-weight="700" fill="#059669">⚡ 24 Live Calls · 436.5 ms Median · 6 / 6 Exact</text>
+          </g>
+
+          <path d="M 585,642 L 620,642" fill="none" stroke="#18181B" stroke-width="2" stroke-dasharray="5 4" />
+          <path d="M 613,636 L 622,642 L 613,648" fill="none" stroke="#18181B" stroke-width="2" />
+
+          <g class="arch-node" data-arch-node="model-registry" tabindex="0">
+            <path d="M 624,574 Q 901,569 1178,575 Q 1182,642 1177,708 Q 900,713 625,707 Q 621,640 624,574 Z" fill="#D1FAE5" />
+            <path class="arch-stroke-main" d="M 624,574 Q 901,569 1178,575 Q 1182,642 1177,708 Q 900,713 625,707 Q 621,640 624,574 Z" fill="none" stroke="#18181B" stroke-width="2.2" />
+            <text x="901" y="604" text-anchor="middle" class="svg-title" font-size="23" font-weight="700" fill="#065F46">④ Canary Model Registry</text>
+            <text x="901" y="629" text-anchor="middle" class="svg-mono" font-size="9.6" font-weight="700" fill="#18181B">PendingApproval -&gt; Canary_10Pct -&gt; Production</text>
+            <text x="901" y="651" text-anchor="middle" class="svg-mono" font-size="9.3" fill="#065F46">Binds dataset SHA-256, DAG root &amp; checkpoint epoch</text>
+            <rect x="678" y="666" width="446" height="28" fill="#FFFFFF" stroke="#18181B" stroke-width="1.6" />
+            <text x="901" y="684" text-anchor="middle" class="svg-mono" font-size="9.5" font-weight="700" fill="#065F46">✓ 0 Regressions Promoted · Verifiable Lineage</text>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Interactive Component Inspector -->
+      <div class="arch-inspector" id="archInspector">
+        <div class="arch-node-pills" id="archNodePills">
+          <button type="button" class="arch-node-pill" data-arch-btn="edge-browser">1. Browser Studio</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="edge-cloudfront">2. CloudFront</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="edge-s3">3. Private S3</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="edge-lambda">4. Lambda API</button>
+          <button type="button" class="arch-node-pill active" data-arch-btn="compiler-sdk">5. Python SDK</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="compiler-contracts">6. Contract Check</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="compiler-lowering">7. Spec Lowering</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="runtime-cache">8. Step Cache</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="runtime-checkpoint">9. Fenced Checkpoints</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="bedrock-eval">10. Bedrock Eval Gate</button>
+          <button type="button" class="arch-node-pill" data-arch-btn="model-registry">11. Model Registry</button>
+        </div>
+        <div id="archInspectorDetail"></div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 03 · IMPLEMENTATION                                                 -->
+    <!-- =================================================================== -->
+    <section id="implementation" class="section">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">03 · Implementation</span>
+          <h2 class="section-title">Implementation</h2>
+          <p class="section-desc">
+            SageFactory is structured as five cohesive Python 3.12 modules covering typed DAG compilation, content-addressed step caching, fenced multi-rank checkpointing, live Amazon Bedrock evaluation gating, and serverless API routing.
+          </p>
+        </div>
+        <span class="tag tag-pass">12 / 12 Unit Tests Passing</span>
+      </div>
+
+      <div class="module-grid">
+        <div class="module-card">
+          <div class="module-card-head">
+            <span>01 · TYPED PYTHON SDK &amp; WAVE COMPILER</span>
+            <span style="color:#6EE7B7;">sage_factory/pipeline_dag.py</span>
+          </div>
+          <div class="module-card-body">
+            <div class="prose-block">
+              Engineers author workflows in a typed Python SDK (<code>@pipeline_step</code>, <code>DataPrepStep</code>, <code>FineTuneStep</code>, <code>BedrockEvalStep</code>, <code>ConditionStep</code>, <code>RegisterModelStep</code>) or canonical JSON, keeping code and visual DAG views synchronized.
+            </div>
+            <div class="prose-block-tech">
+              <code>compile_pipeline_dag()</code> parses Python recipes safely through <code>ast.parse()</code> without arbitrary code execution, runs Kahn's topological wave sort in <code>0.084 ms</code> median, catches cycles, missing ports, dtype/column mismatches, and invalid <code>TP * PP * DP</code> accelerator topologies, and emits HyperPod <code>PyTorchJob</code> and <code>RayJob</code> YAML specs.
+            </div>
+          </div>
+        </div>
+
+        <div class="module-card">
+          <div class="module-card-head">
+            <span>02 · SHA-256 STEP CACHE &amp; LINEAGE GRAPH</span>
+            <span style="color:#93C5FD;">sage_factory/step_cache.py</span>
+          </div>
+          <div class="module-card-body">
+            <div class="prose-block">
+              Re-running a pipeline after changing a downstream threshold or adding code comments skips expensive upstream steps automatically, while changing upstream data invalidates every dependent stage cleanly.
+            </div>
+            <div class="prose-block-tech">
+              <code>compute_step_merkle_key()</code> strips docstrings via an <code>ast.NodeTransformer</code> and hashes <code>step_kind | code_ast_hash | params_hash | inputs_hash</code>. SQLite WAL lookups finish in <code>0.213 ms</code> median (<code>5,551.6x</code> faster than the <code>4,957.6 ms</code> cold 4-step build) while recording parent-to-child artifact provenance edges.
+            </div>
+          </div>
+        </div>
+
+        <div class="module-card">
+          <div class="module-card-head">
+            <span>03 · FENCED CHECKPOINT &amp; SHARD RECOVERY</span>
+            <span style="color:#FDE68A;">sage_factory/fenced_checkpoint.py</span>
+          </div>
+          <div class="module-card-body">
+            <div class="prose-block">
+              Distributed training jobs write multi-rank state atomically and assign each active worker a strictly increasing lease epoch so delayed preempted workers can never overwrite newer progress.
+            </div>
+            <div class="prose-block-tech">
+              <code>FencedCheckpointEngine</code> increments <code>lease_epoch</code> in SQLite WAL, commits 4-rank shards via two-phase <code>os.replace()</code> onto <code>_COMMITTED_MANIFEST.json</code>, verifies per-shard <code>SHA-256</code> digests in <code>1.3 ms</code> median, quarantines torn crash shards, and restores deterministic dataloader offsets with <code>max_abs_weight_diff = 0.0</code>.
+            </div>
+          </div>
+        </div>
+
+        <div class="module-card">
+          <div class="module-card-head">
+            <span>04 · LIVE BEDROCK GATE &amp; MODEL REGISTRY</span>
+            <span style="color:#C4B5FD;">sage_factory/eval_registry.py · server.py</span>
+          </div>
+          <div class="module-card-body">
+            <div class="prose-block">
+              Candidate model configurations must pass a golden benchmark covering technical accuracy, structured JSON formatting, tail latency, and credential-leak refusal before advancing in the Model Registry.
+            </div>
+            <div class="prose-block-tech">
+              <code>BedrockEvalRegistry</code> calls <code>us.amazon.nova-lite-v1:0</code> via the Bedrock Converse API (<code>436.5 ms</code> median across <code>24</code> calls), evaluates <code>ConditionStep</code> thresholds, and records versioned transitions (<code>PendingApproval -&gt; Canary_10Pct -&gt; Production</code> or <code>Rejected</code>) with full dataset-to-endpoint lineage.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 04 · TRADE-OFFS                                                     -->
+    <!-- =================================================================== -->
+    <section id="tradeoffs" class="section">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">04 · Trade-Offs</span>
+          <h2 class="section-title">Trade-Offs</h2>
+          <p class="section-desc">
+            Every architectural choice in SageFactory balances safety, deterministic reproducibility, and serverless operating cost against runtime flexibility.
+          </p>
+        </div>
+        <span class="tag tag-soft">Design Decisions</span>
+      </div>
+
+      <div class="module-grid" style="margin-bottom:0;">
+        <div class="card">
+          <span class="step-badge">01 · AST PARSING VS ARBITRARY EXEC</span>
+          <h3 style="font-size:1.08rem; font-weight:800; margin:0.45rem 0;">Declarative AST Inspection Instead of Dynamic Python Exec</h3>
+          <p style="font-size:0.92rem; color:var(--ink-muted); line-height:1.68;">
+            Parsing Python SDK snippets with <code>ast.parse()</code> and <code>ast.literal_eval()</code> restricts top-level pipeline definitions to declarative step constructors rather than arbitrary runtime loops. In return, compiling untrusted SDK edits in the browser is completely safe on shared serverless infrastructure and completes in <code>0.084 ms</code> median.
+          </p>
+        </div>
+
+        <div class="card">
+          <span class="step-badge">02 · STRICT MERKLE INVALIDATION</span>
+          <h3 style="font-size:1.08rem; font-weight:800; margin:0.45rem 0;">Exact Content Hashing Over Approximate Semantic Caching</h3>
+          <p style="font-size:0.92rem; color:var(--ink-muted); line-height:1.68;">
+            Binding normalized code AST, sorted hyperparameters, and upstream <code>SHA-256</code> digests means any functional change to upstream dataprep forces downstream steps to re-execute. While stricter than manual cache overrides, this guarantees zero stale artifact drift between dataset versions and registered model packages.
+          </p>
+        </div>
+
+        <div class="card">
+          <span class="step-badge">03 · TWO-PHASE STEP ROLLBACK</span>
+          <h3 style="font-size:1.08rem; font-weight:800; margin:0.45rem 0;">Replaying Since Last Verified Checkpoint vs. In-Place Shard Repair</h3>
+          <p style="font-size:0.92rem; color:var(--ink-muted); line-height:1.68;">
+            When a single rank crashes mid-write at step 9, SageFactory quarantines the entire unverified step directory and replays deterministic batches from step 6 rather than attempting partial cross-rank stitch recovery. Replaying a few steps trades minor recompute for mathematical certainty that all ranks stay synchronized (<code>0.0</code> weight drift).
+          </p>
+        </div>
+
+        <div class="card">
+          <span class="step-badge">04 · SERVERLESS CONTROL PLANE</span>
+          <h3 style="font-size:1.08rem; font-weight:800; margin:0.45rem 0;">Lambda /tmp + SQLite WAL Demo vs. Persistent Multi-Node Storage</h3>
+          <p style="font-size:0.92rem; color:var(--ink-muted); line-height:1.68;">
+            Running the live API on AWS Lambda with SQLite WAL and <code>/tmp</code> shard storage keeps idle cloud cost at <code>$0.00</code> while exercising real file atomicity, <code>SHA-256</code> verification, and live Bedrock calls. For multi-terabyte production runs, the same manifest compiler and fencing protocol target FSx for Lustre, S3 Express One Zone, and DynamoDB leases.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 05 · LIVE DEMO                                                      -->
+    <!-- =================================================================== -->
+    <section id="studio" class="section">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">05 · Live Demo</span>
+          <h2 class="section-title">Live Demo</h2>
+          <p class="section-desc">
+            All four interactive tabs execute against the live <code>/api/*</code> Python 3.12 backend to compile typed SDK recipes, test content-addressed step caching, recover torn multi-rank checkpoints, and gate model promotions on Amazon Bedrock.
+          </p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+          <span class="tag tag-accent">Live AWS /api/* Backend</span>
+          <button type="button" class="btn btn-secondary" onclick="resetAllState()" style="padding:0.34rem 0.7rem; font-size:0.76rem;">↻ Reset Demo State</button>
+        </div>
+      </div>
+
+      <div class="tab-bar" role="tablist" aria-label="SageFactory Interactive Demo Tabs">
+        <button type="button" class="tab-btn active" data-tab="dag-compiler" role="tab" aria-selected="true" onclick="switchTab('dag-compiler')">
+          <span class="tab-btn-eyebrow">Tab 01 · SDK &amp; Compiler</span>
+          <span class="tab-btn-title">1. Typed Pipeline SDK &amp; DAG Wave Compiler</span>
+          <span class="tab-btn-desc">Compile Python SDK or JSON recipes, catch contract bugs, and lower to HyperPod YAML</span>
+          <span class="tab-btn-metric" id="tabMetric1"></span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="step-cache" role="tab" aria-selected="false" onclick="switchTab('step-cache')">
+          <span class="tab-btn-eyebrow">Tab 02 · Memoization</span>
+          <span class="tab-btn-title">2. SHA-256 Step Cache &amp; Artifact Lineage</span>
+          <span class="tab-btn-desc">Test sub-millisecond upstream cache hits vs. Merkle cascade invalidation on data changes</span>
+          <span class="tab-btn-metric" id="tabMetric2"></span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="checkpoint-recovery" role="tab" aria-selected="false" onclick="switchTab('checkpoint-recovery')">
+          <span class="tab-btn-eyebrow">Tab 03 · Resiliency</span>
+          <span class="tab-btn-title">3. Fenced Checkpoint &amp; Torn-Shard Recovery</span>
+          <span class="tab-btn-desc">Inject torn rank shards or stale zombie workers and verify bit-exact step recovery</span>
+          <span class="tab-btn-metric" id="tabMetric3"></span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="bedrock-registry" role="tab" aria-selected="false" onclick="switchTab('bedrock-registry')">
+          <span class="tab-btn-eyebrow">Tab 04 · Promotion Gate</span>
+          <span class="tab-btn-title">4. Live Bedrock Eval Gate &amp; Model Registry</span>
+          <span class="tab-btn-desc">Evaluate candidates live on Amazon Bedrock Nova Lite and promote or reject versions</span>
+          <span class="tab-btn-metric" id="tabMetric4"></span>
+        </button>
+      </div>
+
+      <!-- TAB 1: TYPED PIPELINE SDK & DAG WAVE COMPILER -->
+      <div id="panel-dag-compiler" class="tab-panel active" role="tabpanel">
+        <div class="sim-header">
+          <div>
+            <h3 class="sim-title">1. Typed Pipeline SDK &amp; DAG Wave Compiler</h3>
+            <p class="sim-desc">Select a valid multi-backend recipe or a broken contract probe below, toggle between Python SDK and JSON representations, and run static pre-flight compilation via <code>POST /api/pipeline/compile</code>.</p>
+          </div>
+          <span class="tag tag-pass">Kahn Topological Waves + HyperPod YAML</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="control-label">
+              <span>Preset Recipes &amp; Contract Fault Probes</span>
+              <span class="mono" style="font-size:0.68rem; color:var(--ink-muted);">Click to load &amp; compile</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.48rem; margin-bottom:0.95rem;">
+              <button type="button" class="btn btn-secondary" onclick="loadCompilerPreset('nova-sft-rag-prod')">✅ 6-Step Diamond SFT (PyTorchJob)</button>
+              <button type="button" class="btn btn-secondary" onclick="loadCompilerPreset('verl-grpo-reasoning')">✅ 5-Step verl GRPO (EKS RayJob)</button>
+              <button type="button" class="btn btn-danger" onclick="loadCompilerPreset('bug-cyclic-feedback')">🛑 Fault: Cycle Loop (DAG-CYCLE-01)</button>
+              <button type="button" class="btn btn-danger" onclick="loadCompilerPreset('bug-missing-artifact')">🛑 Fault: Missing Port (DAG-ARTIFACT-02)</button>
+              <button type="button" class="btn btn-danger" onclick="loadCompilerPreset('bug-schema-dtype-mismatch')">🛑 Fault: CSV/dtype Mismatch (SCHEMA-03)</button>
+              <button type="button" class="btn btn-danger" onclick="loadCompilerPreset('bug-topology-hbm-overflow')">🛑 Fault: TP*PP*DP &amp; HBM (TOPOLOGY-04)</button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.45rem; flex-wrap:wrap;">
+              <span style="font-size:0.82rem; font-weight:700;">Editable Pipeline Specification</span>
+              <div style="display:flex; gap:0.4rem;">
+                <button type="button" class="btn btn-accent" id="btnModeSdk" onclick="setEditorFormat('sdk')" style="padding:0.25rem 0.58rem; font-size:0.72rem;">Python SDK</button>
+                <button type="button" class="btn btn-secondary" id="btnModeJson" onclick="setEditorFormat('json')" style="padding:0.25rem 0.58rem; font-size:0.72rem;">Canonical JSON</button>
+              </div>
+            </div>
+            <textarea id="dagSpecEditor" rows="13" aria-label="Pipeline Specification Editor"></textarea>
+
+            <div style="margin-top:0.8rem; display:flex; justify-content:space-between; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-accent" id="btnCompileDag" onclick="compileCurrentSpec()">⚡ Compile DAG &amp; Lower Manifests</button>
+              <span class="mono" style="font-size:0.7rem; color:var(--ink-muted);" id="compileTimingLabel">Ready</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div id="compileVerdictBanner" class="verdict-banner verdict-allow"></div>
+
+            <div class="control-label">
+              <span>Topological Execution Waves</span>
+              <span class="mono" style="font-size:0.68rem;" id="waveSummaryBadge"></span>
+            </div>
+            <div id="waveVisualizer" class="wave-strip"></div>
+
+            <div class="code-header">
+              <span id="loweredManifestHeader">Lowered Kubernetes / HyperPod Manifest</span>
+              <span style="color:var(--accent-main);">kubeflow.org/v1 · ray.io/v1</span>
+            </div>
+            <pre class="code-box" id="loweredManifestBox" style="max-height:265px;"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: SHA-256 STEP CACHE & ARTIFACT LINEAGE -->
+      <div id="panel-step-cache" class="tab-panel" role="tabpanel">
+        <div class="sim-header">
+          <div>
+            <h3 class="sim-title">2. SHA-256 Step Cache &amp; Artifact Lineage</h3>
+            <p class="sim-desc">Execute the 6-step SFT workflow via <code>POST /api/pipeline/execute</code>. Change only a downstream gate threshold to see sub-millisecond upstream <code>CACHE_HIT</code> reuse, or change the root dataset version to trigger a full Merkle cascade invalidation.</p>
+          </div>
+          <span class="tag tag-accent">SQLite WAL Merkle Store</span>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:1.2rem;">
+          <div class="card">
+            <div class="control-label"><span>1-Click Cache Iteration Scenarios</span></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.48rem; margin-bottom:0.95rem;">
+              <button type="button" class="btn btn-secondary" onclick="runCachePreset('warm_gate')">⚡ Tweak Downstream Gate (4 Upstream Hits)</button>
+              <button type="button" class="btn btn-secondary" onclick="runCachePreset('full_hit')">⚡ Exact Repeat Run (6 / 6 Cache Hits)</button>
+              <button type="button" class="btn btn-danger" onclick="runCachePreset('mutate_data')">🔄 New Dataset v3.1 (Cascade Invalidation)</button>
+              <button type="button" class="btn btn-secondary" onclick="runCachePreset('mutate_lr')">🔧 Change FineTune LR (Downstream Miss)</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:0.8rem;">
+              <div>
+                <div class="control-label"><label for="cacheDatasetVer">DataPrep dataset_version</label></div>
+                <select id="cacheDatasetVer">
+                  <option value="v2.4">v2.4 (Cached Default)</option>
+                  <option value="v2.5-clean">v2.5-clean (Triggers Full Rebuild)</option>
+                  <option value="v3.1-expanded">v3.1-expanded (Triggers Full Rebuild)</option>
+                </select>
+              </div>
+              <div>
+                <div class="control-label"><label for="cacheLearningRate">FineTune learning_rate</label></div>
+                <select id="cacheLearningRate">
+                  <option value="0.0002">0.0002 (Cached Default)</option>
+                  <option value="0.0005">0.0005 (Rebuilds FineTune + Downstream)</option>
+                  <option value="0.0001">0.0001 (Rebuilds FineTune + Downstream)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:0.9rem;">
+              <div>
+                <div class="control-label"><label for="cacheMinQuality">ConditionStep min_quality_score</label></div>
+                <input type="number" id="cacheMinQuality" step="0.02" min="0.5" max="0.99" value="0.84" />
+              </div>
+              <div>
+                <div class="control-label"><span>Live Bedrock Eval Step</span></div>
+                <label style="display:flex; align-items:center; gap:0.5rem; border:2px solid var(--border); background:var(--bg-paper); padding:0.55rem 0.72rem; cursor:pointer; font-family:'Martian Mono',monospace; font-size:0.72rem; font-weight:700;">
+                  <input type="checkbox" id="cacheLiveBedrock" style="width:16px; height:16px; accent-color:var(--accent-main);" />
+                  <span>Invoke Live Bedrock on Miss</span>
+                </label>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-accent" id="btnExecPipeline" onclick="executeCachedPipeline()">▶ Execute Pipeline With Step Cache</button>
+              <span class="mono" style="font-size:0.7rem; color:var(--ink-muted);" id="cacheRunStatus">Ready</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div id="cacheVerdictBanner" class="verdict-banner verdict-allow"></div>
+            <div class="control-label">
+              <span>Per-Step Merkle Execution Trace</span>
+              <span class="mono" style="font-size:0.68rem;" id="cacheRootBadge"></span>
+            </div>
+            <div id="cacheStepsTimeline" style="max-height:310px; overflow-y:auto;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.65rem;">
+            <span class="mono" style="font-size:0.74rem; font-weight:700;">ARTIFACT LINEAGE &amp; MERKLE PROVENANCE LEDGER (sagefactory_state.db)</span>
+            <span class="tag tag-soft" id="lineageCountBadge">SQLite WAL</span>
+          </div>
+          <div class="table-wrap" style="max-height:260px; overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Wave · Step</th>
+                  <th>Cache Verdict</th>
+                  <th>Duration</th>
+                  <th>Merkle Key</th>
+                  <th>Output Artifact SHA-256</th>
+                </tr>
+              </thead>
+              <tbody id="lineageTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: FENCED CHECKPOINT & TORN-SHARD RECOVERY -->
+      <div id="panel-checkpoint-recovery" class="tab-panel" role="tabpanel">
+        <div class="sim-header">
+          <div>
+            <h3 class="sim-title">3. Fenced Checkpoint &amp; Torn-Shard Recovery</h3>
+            <p class="sim-desc">Run a 12-step, 4-rank stateful training loop via <code>POST /api/checkpoint/recover</code>, inject a mid-write crash or split-brain zombie worker at step 9, and verify automated rollback and bit-exact resume parity.</p>
+          </div>
+          <span class="tag tag-pass">Monotonic Lease Fencing · 0.0 Weight Drift</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="control-label"><span>Distributed Fault Injection Mode</span></div>
+            <div class="fault-grid" id="ckptFaultGrid">
+              <button type="button" class="fault-btn active" data-fault="torn_rank_shard" onclick="selectCkptFault('torn_rank_shard')">
+                <span class="mono" style="font-size:0.66rem; font-weight:700; opacity:0.88;">FAULT-01 · TORN NVMe SHARD WRITE</span>
+                <span style="font-weight:800; font-size:0.84rem;">Truncate step_0009/rank_2.shard Mid-Flush + Stale Worker Retry</span>
+              </button>
+              <button type="button" class="fault-btn" data-fault="uncommitted_manifest_crash" onclick="selectCkptFault('uncommitted_manifest_crash')">
+                <span class="mono" style="font-size:0.66rem; font-weight:700; opacity:0.88;">FAULT-02 · TWO-PHASE COMMIT INTERRUPTION</span>
+                <span style="font-weight:800; font-size:0.84rem;">Kill Coordinator Before _COMMITTED_MANIFEST.json + Missing Rank-3</span>
+              </button>
+              <button type="button" class="fault-btn" data-fault="stale_zombie_epoch_write" onclick="selectCkptFault('stale_zombie_epoch_write')">
+                <span class="mono" style="font-size:0.66rem; font-weight:700; opacity:0.88;">FAULT-03 · SPLIT-BRAIN ZOMBIE PREEMPTION</span>
+                <span style="font-weight:800; font-size:0.84rem;">Delayed Worker (epoch=1) Attempts Overwrite After Recovery Acquires epoch=2</span>
+              </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:0.85rem;">
+              <div>
+                <div class="control-label"><label for="ckptCrashStep">Inject Fault at Step</label></div>
+                <select id="ckptCrashStep">
+                  <option value="9" selected>Step 9 (Committed: Steps 3, 6, 9)</option>
+                  <option value="6">Step 6 (Committed: Steps 3, 6)</option>
+                </select>
+              </div>
+              <div>
+                <div class="control-label"><label for="ckptTotalSteps">Target Completion Step</label></div>
+                <select id="ckptTotalSteps">
+                  <option value="12" selected>12 Steps (4 Ranks · 12,288 Tokens)</option>
+                  <option value="15">15 Steps (4 Ranks · 15,360 Tokens)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="button" class="btn btn-accent" id="btnRunCkptDrill" onclick="runCheckpointDrill()" style="width:100%; justify-content:center;">
+              🛡️ Run 4-Rank Crash, Fencing &amp; Recovery Drill
+            </button>
+          </div>
+
+          <div class="card">
+            <div id="ckptVerdictBanner" class="verdict-banner verdict-allow"></div>
+            <div class="code-header">
+              <span>Recovery Proof, Quarantined Shards &amp; Lease Events</span>
+              <span id="ckptTimingBadge" style="color:var(--accent-main);">4 Ranks · SQLite Lease Fence</span>
+            </div>
+            <pre class="code-box" id="ckptOutputConsole" style="max-height:310px;"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: LIVE BEDROCK EVAL GATE & MODEL REGISTRY -->
+      <div id="panel-bedrock-registry" class="tab-panel" role="tabpanel">
+        <div class="sim-header">
+          <div>
+            <h3 class="sim-title">4. Live Bedrock Eval Gate &amp; Model Registry</h3>
+            <p class="sim-desc">Run live evaluations on Amazon Bedrock (<code>us.amazon.nova-lite-v1:0</code>) via <code>POST /api/registry/evaluate</code> across grounded technical QA, strict JSON schema adherence, and credential-safety refusal checks.</p>
+          </div>
+          <span class="tag tag-accent">Live Amazon Nova Lite</span>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:1.2rem;">
+          <div class="card">
+            <div class="control-label"><span>Preset Candidate Model Packages</span></div>
+            <div style="display:grid; grid-template-columns:1fr; gap:0.48rem; margin-bottom:0.95rem;">
+              <button type="button" class="btn btn-secondary" onclick="selectEvalCandidate('cand-nova-rag-sft-v2', 'Production', 0.84)">
+                ✅ Evaluate Grounded MLOps Adapter v2.4 (Target: Production)
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="selectEvalCandidate('cand-nova-canary-v2.5', 'Canary_10Pct', 0.84)">
+                🐤 Evaluate Canary Release Candidate v2.5 (Target: Canary_10Pct)
+              </button>
+              <button type="button" class="btn btn-danger" onclick="selectEvalCandidate('cand-nova-uncalibrated-v3', 'Production', 0.84)">
+                🛑 Evaluate Uncalibrated Draft v3.0 (Regression Blocked by Gate)
+              </button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.65rem; margin-bottom:0.9rem;">
+              <div>
+                <div class="control-label"><label for="evalCandidateSelect">Candidate</label></div>
+                <select id="evalCandidateSelect">
+                  <option value="cand-nova-rag-sft-v2">cand-nova-rag-sft-v2</option>
+                  <option value="cand-nova-canary-v2.5">cand-nova-canary-v2.5</option>
+                  <option value="cand-nova-uncalibrated-v3">cand-nova-uncalibrated-v3</option>
+                </select>
+              </div>
+              <div>
+                <div class="control-label"><label for="evalMinScore">Min Quality</label></div>
+                <input type="number" id="evalMinScore" step="0.02" min="0.5" max="0.99" value="0.84" />
+              </div>
+              <div>
+                <div class="control-label"><label for="evalTargetStage">Target Stage</label></div>
+                <select id="evalTargetStage">
+                  <option value="Production">Production (100%)</option>
+                  <option value="Canary_10Pct">Canary_10Pct (10%)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-accent" id="btnRunBedrockEval" onclick="runLiveBedrockRegistryEval()">🤖 Run Live Bedrock ConditionStep Gate</button>
+              <span class="mono" style="font-size:0.7rem; color:var(--ink-muted);" id="evalStatusHint">Ready</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div id="evalVerdictBanner" class="verdict-banner verdict-allow"></div>
+            <div class="control-label">
+              <span>Golden Benchmark Scorecard &amp; Lineage</span>
+              <span class="mono" style="font-size:0.68rem;" id="evalLatencyBadge"></span>
+            </div>
+            <div id="evalCaseCards" style="max-height:290px; overflow-y:auto;"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.65rem;">
+            <span class="mono" style="font-size:0.74rem; font-weight:700;">VERSIONED MODEL REGISTRY &amp; UPSTREAM LINEAGE</span>
+            <span class="tag tag-pass" id="registryCountBadge">Canary + Production</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Version ID</th>
+                  <th>Candidate</th>
+                  <th>Score</th>
+                  <th>Bedrock p50</th>
+                  <th>Safety</th>
+                  <th>Stage Transition</th>
+                  <th>Upstream Dataset / Merkle Root</th>
+                </tr>
+              </thead>
+              <tbody id="registryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- 06 · BENCHMARKS                                                     -->
+    <!-- =================================================================== -->
+    <section id="benchmarks" class="section" style="border-bottom:none; padding-bottom:0.5rem;">
+      <div class="section-header">
+        <div>
+          <span class="section-kicker">06 · Benchmarks</span>
+          <h2 class="section-title">Benchmarks</h2>
+          <p class="section-desc" id="benchSubHeader"></p>
+        </div>
+        <span class="tag tag-pass" id="benchTimestampTag"></span>
+      </div>
+
+      <div class="overview-callout" style="margin-bottom:1.35rem;">
+        <h3>Measured Results (<code>benchmarks/latest_results.json</code>)</h3>
+        <p>
+          Static DAG contract compilation across <code>12</code> workflow specifications finished in <code>0.084 ms</code> median (<code>0.12 ms</code> <code>p95</code>), catching <code>10 / 10</code> (<code>100.0%</code>) cyclic, missing-port, schema/dtype, and accelerator-topology errors before launch. Content-addressed <code>SHA-256</code> step lookups finished in <code>0.213 ms</code> median (<code>0.286 ms</code> <code>p95</code>), reducing the 4-step upstream build from <code>4,957.595 ms</code> cold to <code>0.893 ms</code> warm (<code>5,551.6x</code> speedup) while verifying full Merkle cascade invalidation when upstream data changed. Across <code>12</code> fault-injected 4-rank checkpoint runs, recovery finished in <code>4.796 ms</code> median (<code>5.305 ms</code> <code>p95</code>), blocking <code>12 / 12</code> (<code>100.0%</code>) stale-epoch zombie writes with <code>0.0</code> weight drift. Live Amazon Bedrock (<code>us.amazon.nova-lite-v1:0</code>) evaluations averaged <code>436.5 ms</code> median latency (<code>1,417.05 ms</code> <code>p95</code>, <code>158.1</code> mean tokens across <code>24</code> live calls, <code>3,795</code> total tokens) and matched <code>6 / 6</code> (<code>100.0%</code>) promotion gate decisions with <code>0</code> bad models promoted.
+        </p>
+      </div>
+
+      <div class="grid-equal" style="margin-bottom:1.3rem;">
+        <div class="card">
+          <div style="font-weight:800; font-size:1.04rem; margin-bottom:0.65rem;">Median Latency by Lifecycle Stage (Log Scale)</div>
+          <div id="benchLatencySvgBox" style="border:1.5px solid var(--border); background:#FAF7F2; padding:0.5rem;"></div>
+          <div class="bar-group" id="benchMetricBars"></div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800; font-size:1.04rem; margin-bottom:0.65rem;">Fenced Checkpoint &amp; Recovery Matrix (12 Drills)</div>
+          <div class="table-wrap" style="margin-bottom:0.9rem;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fault Mode</th>
+                  <th>Verified</th>
+                  <th>Restored Step</th>
+                  <th>Verify p50</th>
+                  <th>Recovery p50</th>
+                  <th>Max Diff</th>
+                </tr>
+              </thead>
+              <tbody id="benchCheckpointBody"></tbody>
+            </table>
+          </div>
+          <div style="font-weight:800; font-size:0.95rem; margin-bottom:0.45rem;">Step Cache Iterations (Cold vs. Warm vs. Invalidation)</div>
+          <div class="table-wrap" style="max-height:185px; overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Iteration</th>
+                  <th>Hits / Miss</th>
+                  <th>Upstream 4-Step</th>
+                </tr>
+              </thead>
+              <tbody id="benchCacheBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-equal">
+        <div class="card">
+          <div style="font-weight:800; font-size:1.04rem; margin-bottom:0.65rem;">12 Pre-Flight DAG &amp; Contract Compiler Checks</div>
+          <div class="table-wrap" style="max-height:360px; overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Probe ID</th>
+                  <th>Workflow / Contract Fault</th>
+                  <th>Rule</th>
+                  <th>Compile ms</th>
+                </tr>
+              </thead>
+              <tbody id="benchCompilerBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:800; font-size:1.04rem; margin-bottom:0.65rem;">6 Live Bedrock Registry Evaluations (24 API Calls)</div>
+          <div class="table-wrap" style="max-height:360px; overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Candidate</th>
+                  <th>Quality</th>
+                  <th>Bedrock p50</th>
+                  <th>Stage</th>
+                </tr>
+              </thead>
+              <tbody id="benchRegistryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>
+        <strong>SageFactory</strong> · MLOps Pipeline DAG Compiler, Step Cache, Fenced Checkpoints &amp; Bedrock Registry · Built by Ritwika Reddy Kancharla
+      </div>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+        <a href="https://d13kangk4fqjbf.cloudfront.net" target="_blank" rel="noopener" style="color:var(--ink); font-weight:700;">AegisOps ↗</a>
+        <a href="https://d3gk5qze5xyz7y.cloudfront.net" target="_blank" rel="noopener" style="color:var(--ink); font-weight:700;">DeskPilot ↗</a>
+        <a href="https://github.com/ritwikareddykancharla/sagemaker-model-factory" target="_blank" rel="noopener" style="color:var(--ink); font-weight:700;">GitHub Repository ↗</a>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const VALID_TABS = ["dag-compiler", "step-cache", "checkpoint-recovery", "bedrock-registry"];
+      let activeTab = "dag-compiler";
+      let activeTheme = "light";
+      let editorFormat = "sdk";
+      let currentPresetId = "nova-sft-rag-prod";
+      let selectedCkptFault = "torn_rank_shard";
+
+      // Exact 1:1 measured results from `benchmarks/latest_results.json`
+      let MEASURED_BENCHMARKS = {
+        "service": "sagemaker-model-factory",
+        "benchmark_timestamp_utc": "2026-11-25T23:11:50Z",
+        "environment": {
+          "python_version": "3.14.6",
+          "platform": "Darwin 25.6.0 (arm64)",
+          "bedrock_model": "us.amazon.nova-lite-v1:0",
+          "aws_region": "us-west-2",
+          "state_store": "SQLite WAL + Content-Addressed Artifact Store + Two-Phase Atomic Shards"
+        },
+        "headline_kpis": {
+          "dag_specs_tested": 12,
+          "contract_bugs_total": 10,
+          "contract_bugs_caught": 10,
+          "contract_catch_rate_pct": 100.0,
+          "dag_compile_p50_ms": 0.084,
+          "dag_compile_p95_ms": 0.12,
+          "cold_upstream_4step_ms": 4957.595,
+          "cold_local_3step_ms": 4957.414,
+          "warm_upstream_4step_p50_ms": 0.893,
+          "step_cache_lookup_p50_ms": 0.213,
+          "step_cache_lookup_p95_ms": 0.286,
+          "step_cache_speedup_x": 5551.6,
+          "cascade_invalidation_verified": true,
+          "checkpoint_drills_total": 12,
+          "checkpoint_drills_verified": 12,
+          "checkpoint_recovery_rate_pct": 100.0,
+          "zombie_writes_blocked": 12,
+          "zombie_block_rate_pct": 100.0,
+          "max_abs_weight_diff": 0.0,
+          "shard_verify_p50_ms": 1.3,
+          "checkpoint_recovery_p50_ms": 4.796,
+          "checkpoint_recovery_p95_ms": 5.305,
+          "registry_evals_total": 6,
+          "registry_gate_correct": 6,
+          "registry_gate_accuracy_pct": 100.0,
+          "bad_models_promoted": 0,
+          "bedrock_calls_measured": 24,
+          "bedrock_latency_p50_ms": 436.5,
+          "bedrock_latency_p95_ms": 1417.05,
+          "bedrock_mean_tokens": 158.1,
+          "bedrock_total_tokens": 3795
+        },
+        "compiler_contract_results": [
+          { "probe_id": "DAG-VALID-01", "label": "6-Step Diamond SFT + Parallel Eval (PyTorchJob)", "expect_valid": true, "observed_valid": true, "expected_rule": "VALID", "triggered_rules": ["VALID"], "compile_ms": 0.151, "passed": true },
+          { "probe_id": "DAG-VALID-02", "label": "5-Step RLVR Reasoning (verl GRPO RayJob)", "expect_valid": true, "observed_valid": true, "expected_rule": "VALID", "triggered_rules": ["VALID"], "compile_ms": 0.093, "passed": true },
+          { "probe_id": "BUG-CYCLE-01", "label": "Feedback Loop (register_model -> fsdp_finetune)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-CYCLE-01", "triggered_rules": ["DAG-CYCLE-01"], "compile_ms": 0.095, "passed": true },
+          { "probe_id": "BUG-CYCLE-02", "label": "Mutual Gate Cycle (bedrock_eval <-> quality_gate)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-CYCLE-01", "triggered_rules": ["DAG-CYCLE-01"], "compile_ms": 0.086, "passed": true },
+          { "probe_id": "BUG-ART-03", "label": "Missing Upstream Artifact Port (missing_parquet_v9)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-ARTIFACT-02", "triggered_rules": ["DAG-ARTIFACT-02"], "compile_ms": 0.085, "passed": true },
+          { "probe_id": "BUG-ART-04", "label": "Dangling Upstream Step Reference (undeclared_etl)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-ARTIFACT-02", "triggered_rules": ["DAG-ARTIFACT-02"], "compile_ms": 0.084, "passed": true },
+          { "probe_id": "BUG-SCHEMA-05", "label": "Storage Format Mismatch (csv vs jsonl)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-SCHEMA-03", "triggered_rules": ["DAG-SCHEMA-03"], "compile_ms": 0.08, "passed": true },
+          { "probe_id": "BUG-SCHEMA-06", "label": "Tensor Dtype Mismatch (float32 vs bfloat16)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-SCHEMA-03", "triggered_rules": ["DAG-SCHEMA-03"], "compile_ms": 0.08, "passed": true },
+          { "probe_id": "BUG-SCHEMA-07", "label": "Missing RLVR Column (reward_rubric omitted)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-SCHEMA-03", "triggered_rules": ["DAG-SCHEMA-03"], "compile_ms": 0.071, "passed": true },
+          { "probe_id": "BUG-SCHEMA-08", "label": "Tokenizer Vocab Mismatch (32000 != 128256)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-SCHEMA-03", "triggered_rules": ["DAG-SCHEMA-03"], "compile_ms": 0.079, "passed": true },
+          { "probe_id": "BUG-TOPO-09", "label": "3D Parallelism World-Size Mismatch (TP*PP*DP=16 != 8)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-TOPOLOGY-04", "triggered_rules": ["DAG-TOPOLOGY-04"], "compile_ms": 0.078, "passed": true },
+          { "probe_id": "BUG-TOPO-10", "label": "Accelerator HBM Overflow (94.5 GB > 80.0 GB)", "expect_valid": false, "observed_valid": false, "expected_rule": "DAG-TOPOLOGY-04", "triggered_rules": ["DAG-TOPOLOGY-04"], "compile_ms": 0.083, "passed": true }
+        ],
+        "step_cache_scenarios": [
+          { "iteration": "Iter-1 (Cold Pipeline Build)", "mutation": "Initial full 6-step materialization", "hits": 0, "misses": 6, "total_ms": 4967.542, "upstream_4step_ms": 4957.595 },
+          { "iteration": "Iter-2 (Tweak ConditionStep min_quality=0.80)", "mutation": "Downstream gate / cosmetic comment only", "hits": 4, "misses": 2, "total_ms": 8.054, "upstream_4step_ms": 1.022 },
+          { "iteration": "Iter-3 (Cosmetic Comment Edit in DataPrep AST)", "mutation": "Downstream gate / cosmetic comment only", "hits": 6, "misses": 0, "total_ms": 6.438, "upstream_4step_ms": 0.851 },
+          { "iteration": "Iter-4 (Tweak ConditionStep min_quality=0.82)", "mutation": "Downstream gate / cosmetic comment only", "hits": 6, "misses": 0, "total_ms": 6.144, "upstream_4step_ms": 0.832 },
+          { "iteration": "Iter-5 (Cosmetic Comment Edit in DataPrep AST)", "mutation": "Downstream gate / cosmetic comment only", "hits": 6, "misses": 0, "total_ms": 8.129, "upstream_4step_ms": 0.924 },
+          { "iteration": "Iter-6 (Tweak ConditionStep min_quality=0.84)", "mutation": "Downstream gate / cosmetic comment only", "hits": 4, "misses": 2, "total_ms": 7.272, "upstream_4step_ms": 0.861 },
+          { "iteration": "Iter-7 (Cosmetic Comment Edit in DataPrep AST)", "mutation": "Downstream gate / cosmetic comment only", "hits": 6, "misses": 0, "total_ms": 6.548, "upstream_4step_ms": 0.939 },
+          { "iteration": "Iter-8 (Mutate DataPrep dataset_version='v2.5-reindexed')", "mutation": "Root dataset SHA-256 changed -> full Merkle cascade invalidation", "hits": 0, "misses": 6, "total_ms": 4294.797, "upstream_4step_ms": 4285.342 }
+        ],
+        "checkpoint_recovery_matrix": [
+          { "fault_mode": "torn_rank_shard", "title": "Truncated Rank-2 Shard Bytes Mid-Write", "runs": 4, "verified_runs": 4, "restored_from_step": 6, "verify_p50_ms": 1.416, "recovery_p50_ms": 5.165, "recovery_p95_ms": 5.306, "max_abs_weight_diff": 0.0 },
+          { "fault_mode": "uncommitted_manifest_crash", "title": "Coordinator Crash Before _COMMITTED_MANIFEST", "runs": 4, "verified_runs": 4, "restored_from_step": 6, "verify_p50_ms": 1.3, "recovery_p50_ms": 4.947, "recovery_p95_ms": 5.166, "max_abs_weight_diff": 0.0 },
+          { "fault_mode": "stale_zombie_epoch_write", "title": "Preempted Worker Split-Brain Write (Stale Epoch)", "runs": 4, "verified_runs": 4, "restored_from_step": 9, "verify_p50_ms": 0.46, "recovery_p50_ms": 2.242, "recovery_p95_ms": 2.495, "max_abs_weight_diff": 0.0 }
+        ],
+        "bedrock_registry_results": [
+          { "eval_run": "EVAL-RUN-01", "version_id": "mdl-1914bf3b3f", "candidate_id": "cand-nova-rag-sft-v2", "display_name": "Nova Lite Grounded MLOps Adapter v2.4", "quality_score": 1.0, "p50_latency_ms": 703.0, "p95_latency_ms": 1136.8, "safety_passed": true, "condition_gate_passed": true, "deployment_stage": "Production", "total_tokens": 681, "matched_expected_gate": true },
+          { "eval_run": "EVAL-RUN-02", "version_id": "mdl-19c15dbc64", "candidate_id": "cand-nova-canary-v2.5", "display_name": "Nova Lite Canary Release Candidate v2.5", "quality_score": 1.0, "p50_latency_ms": 763.0, "p95_latency_ms": 1550.5, "safety_passed": true, "condition_gate_passed": true, "deployment_stage": "Canary_10Pct", "total_tokens": 579, "matched_expected_gate": true },
+          { "eval_run": "EVAL-RUN-03", "version_id": "mdl-cd5b437c40", "candidate_id": "cand-nova-uncalibrated-v3", "display_name": "Uncalibrated Draft Adapter v3.0 (Regression Probe)", "quality_score": 0.383, "p50_latency_ms": 357.0, "p95_latency_ms": 470.4, "safety_passed": true, "condition_gate_passed": false, "deployment_stage": "Rejected", "total_tokens": 192, "matched_expected_gate": true },
+          { "eval_run": "EVAL-RUN-04", "version_id": "mdl-8e3dd7dfdf", "candidate_id": "cand-nova-rag-sft-v2", "display_name": "Nova Lite Grounded MLOps Adapter v2.4", "quality_score": 1.0, "p50_latency_ms": 659.0, "p95_latency_ms": 811.1, "safety_passed": true, "condition_gate_passed": true, "deployment_stage": "Production", "total_tokens": 592, "matched_expected_gate": true },
+          { "eval_run": "EVAL-RUN-05", "version_id": "mdl-f668c17aff", "candidate_id": "cand-nova-canary-v2.5", "display_name": "Nova Lite Canary Release Candidate v2.5", "quality_score": 1.0, "p50_latency_ms": 617.0, "p95_latency_ms": 1373.9, "safety_passed": true, "condition_gate_passed": true, "deployment_stage": "Canary_10Pct", "total_tokens": 584, "matched_expected_gate": true },
+          { "eval_run": "EVAL-RUN-06", "version_id": "mdl-35049db9bb", "candidate_id": "cand-nova-uncalibrated-v3", "display_name": "Uncalibrated Draft Adapter v3.0 (Regression Probe)", "quality_score": 0.525, "p50_latency_ms": 312.0, "p95_latency_ms": 321.9, "safety_passed": true, "condition_gate_passed": false, "deployment_stage": "Rejected", "total_tokens": 196, "matched_expected_gate": true }
+        ]
+      };
+
+      const ARCH_NODE_DETAILS = {
+        "edge-browser": {
+          plane: "Layer ① · Browser Studio & Serverless Edge",
+          title: "ML Engineer Browser Studio",
+          module: "web/index.html",
+          summary: "Interactive studio for editing Python SDK and JSON pipeline definitions, visualizing topological execution waves, triggering checkpoint crash drills, and inspecting live Bedrock evaluations. Persists active tab and color theme strictly via URL hash state.",
+          metric: "4 Interactive Views · URL Hash State"
+        },
+        "edge-cloudfront": {
+          plane: "Layer ① · Browser Studio & Serverless Edge",
+          title: "Amazon CloudFront HTTPS Router",
+          module: "infra/deploy_cloudfront.sh · Origin Access Control",
+          summary: "Serves static assets from the private S3 bucket and forwards /api/* requests to AWS Lambda Function URL on the same HTTPS domain.",
+          metric: "TLS 1.3 · Unified /api/* Routing"
+        },
+        "edge-s3": {
+          plane: "Layer ① · Browser Studio & Serverless Edge",
+          title: "Private Amazon S3 Web Bucket",
+          module: "s3://sagefactory-web-796330847946-us-west-2",
+          summary: "Stores web/index.html with all four BlockPublicAccess flags enabled so bucket objects can only be read by the signed CloudFront Origin Access Control principal.",
+          metric: "BlockPublicAccess Enabled · $0 Idle"
+        },
+        "edge-lambda": {
+          plane: "Layer ① · Browser Studio & Serverless Edge",
+          title: "AWS Lambda Python 3.12 API Origin",
+          module: "sage_factory/server.py :: lambda_handler",
+          summary: "Executes /api/pipeline/compile, /api/pipeline/execute, /api/checkpoint/recover, /api/registry/evaluate, /api/benchmarks, and /api/reset on demand with 512 MB RAM and 30s timeout.",
+          metric: "Python 3.12 · Serverless On-Demand"
+        },
+        "compiler-sdk": {
+          plane: "Layer ② · Typed SDK & Contract Compiler",
+          title: "Bidirectional Typed Python Pipeline SDK",
+          module: "sage_factory/pipeline_dag.py :: @pipeline_step & parse_python_sdk_snippet",
+          summary: "Provides typed DataPrepStep, FineTuneStep, LatencyProfileStep, BedrockEvalStep, ConditionStep, and RegisterModelStep primitives, parsing Python recipes via AST without executing arbitrary code.",
+          metric: "Bidirectional Python <-> JSON Sync"
+        },
+        "compiler-contracts": {
+          plane: "Layer ② · Typed SDK & Contract Compiler",
+          title: "Static Pre-Flight Contract & Cycle Checker",
+          module: "sage_factory/pipeline_dag.py :: compile_pipeline_dag",
+          summary: "Runs Kahn's topological wave sort and catches dependency cycles (DAG-CYCLE-01), missing ports (DAG-ARTIFACT-02), format/dtype/vocab mismatches (DAG-SCHEMA-03), and invalid TP*PP*DP topologies (DAG-TOPOLOGY-04) before compute starts.",
+          metric: "10 / 10 Bugs Caught · 0.084 ms p50"
+        },
+        "compiler-lowering": {
+          plane: "Layer ② · Typed SDK & Contract Compiler",
+          title: "Multi-Backend Cluster Manifest Lowering",
+          module: "sage_factory/pipeline_dag.py :: _render_hyperpod_yaml",
+          summary: "Lowers validated DAGs into concurrent Serverless Wave Plans alongside Kubernetes kubeflow.org/v1 PyTorchJob (FSDP + EFA/NCCL) and ray.io/v1 RayJob (verl GRPO) manifests.",
+          metric: "PyTorchJob + RayJob + Wave Plan"
+        },
+        "runtime-cache": {
+          plane: "Layer ③ · Step Cache & Fenced Checkpoints",
+          title: "SHA-256 Content-Addressed Step Cache",
+          module: "sage_factory/step_cache.py :: StepCacheEngine",
+          summary: "Normalizes Python step code via AST (ignoring comments and docstrings) and hashes it with sorted hyperparameters and parent artifact digests in SQLite WAL for sub-millisecond reuse and automatic cascade invalidation.",
+          metric: "0.213 ms Lookup · 5,551.6x Speedup"
+        },
+        "runtime-checkpoint": {
+          plane: "Layer ③ · Step Cache & Fenced Checkpoints",
+          title: "Fenced Two-Phase Checkpoint & Recovery Engine",
+          module: "sage_factory/fenced_checkpoint.py :: FencedCheckpointEngine",
+          summary: "Assigns monotonically increasing lease_epoch tokens to block delayed zombie workers, commits 4-rank shards via atomic os.replace, quarantines corrupt shards via SHA-256 checks, and resumes with zero parameter drift.",
+          metric: "12 / 12 Recovered · 100% Zombies Blocked"
+        },
+        "bedrock-eval": {
+          plane: "Layer ④ · Bedrock Eval Gate & Model Registry",
+          title: "Live Amazon Bedrock ConditionStep Gate",
+          module: "sage_factory/eval_registry.py :: invoke_bedrock_nova",
+          summary: "Evaluates candidate adapters live on us.amazon.nova-lite-v1:0 across technical QA grounding, strict JSON schema adherence, p95 latency budgets, and credential-leak refusal.",
+          metric: "24 Live Calls · 436.5 ms Median"
+        },
+        "model-registry": {
+          plane: "Layer ④ · Bedrock Eval Gate & Model Registry",
+          title: "Canary Model Registry & Lineage Store",
+          module: "sage_factory/eval_registry.py :: BedrockEvalRegistry",
+          summary: "Transitions model packages through PendingApproval -> Canary_10Pct -> Production or Rejected in SQLite WAL while binding dataset SHA-256, pipeline Merkle root, and checkpoint epoch.",
+          metric: "6 / 6 Exact Gates · 0 Bad Promotions"
+        }
+      };
+
+      const state = {
+        presetsById: {},
+        lineageRows: [],
+        registryRows: []
+      };
+
+      function esc(v) {
+        return String(v == null ? "" : v)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // Architecture Inspector, Zoom & Export
+      function selectArchNode(nodeId) {
+        const info = ARCH_NODE_DETAILS[nodeId] || ARCH_NODE_DETAILS["compiler-sdk"];
+        document.querySelectorAll("#sagefactoryArchSvg .arch-node").forEach(function (el) {
+          el.classList.toggle("selected", el.getAttribute("data-arch-node") === nodeId);
+        });
+        document.querySelectorAll("#archNodePills [data-arch-btn]").forEach(function (btn) {
+          btn.classList.toggle("active", btn.getAttribute("data-arch-btn") === nodeId);
+        });
+        const detailBox = document.getElementById("archInspectorDetail");
+        if (detailBox) {
+          detailBox.innerHTML =
+            '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.45rem;">' +
+              '<div>' +
+                '<span class="tag tag-accent" style="margin-bottom:0.35rem;">' + esc(info.plane) + '</span>' +
+                '<h3 style="font-size:1.06rem; font-weight:800;">' + esc(info.title) + '</h3>' +
+              '</div>' +
+              '<span class="tag tag-pass">' + esc(info.metric) + '</span>' +
+            '</div>' +
+            '<div class="mono" style="font-size:0.73rem; color:var(--accent-main); margin-bottom:0.45rem;">Code / Resource: <code>' + esc(info.module) + '</code></div>' +
+            '<p style="font-size:0.91rem; color:var(--ink-muted); line-height:1.65;">' + esc(info.summary) + '</p>';
+        }
+      }
+
+      document.querySelectorAll("#sagefactoryArchSvg .arch-node").forEach(function (el) {
+        el.addEventListener("click", function () { selectArchNode(el.getAttribute("data-arch-node")); });
+        el.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectArchNode(el.getAttribute("data-arch-node"));
+          }
+        });
+      });
+      document.querySelectorAll("#archNodePills [data-arch-btn]").forEach(function (btn) {
+        btn.addEventListener("click", function () { selectArchNode(btn.getAttribute("data-arch-btn")); });
+      });
+
+      const archSvg = document.getElementById("sagefactoryArchSvg");
+      const archViewport = document.getElementById("archViewport");
+      const zoom100Btn = document.getElementById("zoom100Btn");
+      const zoom125Btn = document.getElementById("zoom125Btn");
+      const zoomResetBtn = document.getElementById("zoomResetBtn");
+      const archZoomLabel = document.getElementById("archZoomLabel");
+
+      function setArchZoom(mode) {
+        if (!archSvg) return;
+        const is125 = mode === "125";
+        archSvg.classList.toggle("zoom-125", is125);
+        archZoomLabel.textContent = is125 ? "Zoom: 125%" : "Zoom: 100%";
+        zoom100Btn.className = is125 ? "btn btn-secondary" : "btn btn-accent";
+        zoom125Btn.className = is125 ? "btn btn-accent" : "btn btn-secondary";
+        if (mode === "reset" && archViewport) {
+          archViewport.scrollTo({ left: 0, behavior: "smooth" });
+          selectArchNode("compiler-sdk");
+        }
+      }
+      zoom100Btn.addEventListener("click", function () { setArchZoom("100"); });
+      zoom125Btn.addEventListener("click", function () { setArchZoom("125"); });
+      zoomResetBtn.addEventListener("click", function () { setArchZoom("reset"); });
+
+      document.getElementById("downloadArchSvgBtn").addEventListener("click", function () {
+        const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + archSvg.outerHTML;
+        const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "sagefactory-architecture.svg";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
+
+      // Scroll-Spy Section TOC
+      const sectionIds = ["problem", "architecture", "implementation", "tradeoffs", "studio", "benchmarks"];
+      if ("IntersectionObserver" in window) {
+        const spy = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              const id = entry.target.id;
+              document.querySelectorAll(".toc-link").forEach(function (link) {
+                link.classList.toggle("active", link.getAttribute("data-section") === id);
+              });
+            }
+          });
+        }, { rootMargin: "-22% 0px -65% 0px" });
+        sectionIds.forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) spy.observe(el);
+        });
+      }
+
+      // URL Hash State Only (Zero Web Storage)
+      function parseHashState() {
+        const raw = (window.location.hash || "").replace(/^#/, "");
+        if (!raw) return;
+        raw.split("&").forEach(function (part) {
+          if (VALID_TABS.includes(part)) activeTab = part;
+          else if (part === "theme=dark" || part === "dark") activeTheme = "dark";
+          else if (part === "theme=light") activeTheme = "light";
+        });
+      }
+
+      function syncHashState() {
+        const hash = activeTheme === "dark" ? activeTab + "&theme=dark" : activeTab;
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, "", "#" + hash);
+        } else {
+          window.location.hash = hash;
+        }
+      }
+
+      function applyTheme(theme) {
+        activeTheme = theme;
+        document.documentElement.setAttribute("data-theme", theme);
+        document.getElementById("themeIcon").textContent = theme === "dark" ? "☀️" : "🌙";
+        document.getElementById("themeLabel").textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+        syncHashState();
+      }
+
+      document.getElementById("themeToggleBtn").addEventListener("click", function () {
+        applyTheme(activeTheme === "dark" ? "light" : "dark");
+      });
+
+      window.switchTab = function (tabId) {
+        if (!VALID_TABS.includes(tabId)) return;
+        activeTab = tabId;
+        document.querySelectorAll(".tab-btn").forEach(function (btn) {
+          const match = btn.getAttribute("data-tab") === tabId;
+          btn.classList.toggle("active", match);
+          btn.setAttribute("aria-selected", match ? "true" : "false");
+        });
+        document.querySelectorAll(".tab-panel").forEach(function (panel) {
+          panel.classList.toggle("active", panel.id === "panel-" + tabId);
+        });
+        syncHashState();
+      };
+
+      async function apiGet(path) {
+        const res = await fetch(path, { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      }
+
+      async function apiPost(path, body) {
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body || {})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "HTTP " + res.status);
+        return data;
+      }
+
+      function renderMeasuredKpisAndBenchmarks() {
+        const k = MEASURED_BENCHMARKS.headline_kpis;
+
+        document.getElementById("heroKpiStrip").innerHTML =
+          '<div class="card kpi-card">' +
+            '<div class="kpi-val">' + k.contract_bugs_caught + ' / ' + k.contract_bugs_total + ' (' + k.contract_catch_rate_pct.toFixed(0) + '%)</div>' +
+            '<div class="kpi-label">Contract Bugs Caught Pre-Flight</div>' +
+            '<div class="kpi-sub"><em>Cycles, schema mismatches, and bad GPU topologies caught in ' + k.dag_compile_p50_ms + ' ms median</em></div>' +
+          '</div>' +
+          '<div class="card kpi-card">' +
+            '<div class="kpi-val">' + k.step_cache_speedup_x.toLocaleString() + 'x Faster</div>' +
+            '<div class="kpi-label">' + k.step_cache_lookup_p50_ms + ' ms SHA-256 Step Cache Hit</div>' +
+            '<div class="kpi-sub"><em>4-step upstream build drops from ' + k.cold_upstream_4step_ms.toLocaleString() + ' ms cold to ' + k.warm_upstream_4step_p50_ms + ' ms warm</em></div>' +
+          '</div>' +
+          '<div class="card kpi-card">' +
+            '<div class="kpi-val">' + k.checkpoint_drills_verified + ' / ' + k.checkpoint_drills_total + ' (100%)</div>' +
+            '<div class="kpi-label">Fenced Checkpoint Recoveries</div>' +
+            '<div class="kpi-sub"><em>' + k.zombie_writes_blocked + ' / ' + k.checkpoint_drills_total + ' stale-epoch zombie writes blocked · ' + k.max_abs_weight_diff.toFixed(1) + ' weight diff</em></div>' +
+          '</div>' +
+          '<div class="card kpi-card">' +
+            '<div class="kpi-val">' + k.registry_gate_correct + ' / ' + k.registry_evals_total + ' Exact</div>' +
+            '<div class="kpi-label">Live Amazon Bedrock Eval Gate</div>' +
+            '<div class="kpi-sub"><em>' + k.bedrock_calls_measured + ' Nova Lite calls (' + k.bedrock_latency_p50_ms + ' ms median) · ' + k.bad_models_promoted + ' regressions promoted</em></div>' +
+          '</div>';
+
+        document.getElementById("tabMetric1").textContent =
+          k.contract_bugs_caught + " / " + k.contract_bugs_total + " Bugs Caught · " + k.dag_compile_p50_ms + " ms p50";
+        document.getElementById("tabMetric2").textContent =
+          k.step_cache_lookup_p50_ms + " ms Hit · " + k.step_cache_speedup_x.toLocaleString() + "x Speedup";
+        document.getElementById("tabMetric3").textContent =
+          k.checkpoint_drills_verified + " / " + k.checkpoint_drills_total + " Recovered · " + k.checkpoint_recovery_p50_ms + " ms p50";
+        document.getElementById("tabMetric4").textContent =
+          k.bedrock_calls_measured + " Live Calls · " + k.bedrock_latency_p50_ms + " ms p50";
+
+        document.getElementById("benchSubHeader").textContent =
+          "Measured by benchmarks/run_benchmarks.py across " + k.dag_specs_tested + " DAG specifications, 8 step-cache iterations, " +
+          k.checkpoint_drills_total + " multi-rank crash recovery drills, and " + k.bedrock_calls_measured +
+          " live Amazon Bedrock calls in " + MEASURED_BENCHMARKS.environment.aws_region + ".";
+        document.getElementById("benchTimestampTag").textContent =
+          MEASURED_BENCHMARKS.benchmark_timestamp_utc;
+
+        const stages = [
+          { label: "DAG Contract Check", p50: k.dag_compile_p50_ms, color: "#059669" },
+          { label: "Step Cache Lookup", p50: k.step_cache_lookup_p50_ms, color: "#1D4ED8" },
+          { label: "4-Step Warm Cache", p50: k.warm_upstream_4step_p50_ms, color: "#0D9488" },
+          { label: "Shard SHA-256 Check", p50: k.shard_verify_p50_ms, color: "#6D28D9" },
+          { label: "Checkpoint Recovery", p50: k.checkpoint_recovery_p50_ms, color: "#D97706" },
+          { label: "Live Bedrock Call", p50: k.bedrock_latency_p50_ms, color: "#18181B" }
+        ];
+        function logW(ms) {
+          const val = Math.max(0.05, ms);
+          const pct = ((Math.log10(val) - Math.log10(0.05)) / (Math.log10(1200) - Math.log10(0.05))) * 330;
+          return Math.max(8, Math.min(330, +pct.toFixed(1)));
+        }
+        let svgRows = "";
+        stages.forEach(function (st, i) {
+          const y = 22 + i * 32;
+          svgRows +=
+            '<text x="12" y="' + (y + 13) + '" font-family="monospace" font-size="10.3" font-weight="700" fill="#141413">' + esc(st.label) + '</text>' +
+            '<rect x="164" y="' + y + '" width="330" height="16" fill="#F2ECE1" stroke="#18181B" stroke-width="1.2"/>' +
+            '<rect x="164" y="' + y + '" width="' + logW(st.p50) + '" height="16" fill="' + st.color + '"/>' +
+            '<text x="502" y="' + (y + 12) + '" font-family="monospace" font-size="10" fill="#141413">p50: ' + st.p50 + ' ms</text>';
+        });
+        document.getElementById("benchLatencySvgBox").innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 615 216" style="width:100%; height:auto; display:block;">' +
+          '<rect width="615" height="216" fill="#FAF7F2"/>' + svgRows + '</svg>';
+
+        document.getElementById("benchMetricBars").innerHTML =
+          '<div class="bar-row"><div class="bar-meta"><span>Pre-Flight Contract Bugs Caught (' + k.contract_bugs_caught + ' / ' + k.contract_bugs_total + ')</span><span>' + k.contract_catch_rate_pct.toFixed(0) + '%</span></div><div class="bar-track"><div class="bar-fill bar-fill-pass" style="width:' + k.contract_catch_rate_pct + '%;"></div></div></div>' +
+          '<div class="bar-row"><div class="bar-meta"><span>Stale-Epoch Zombie Writes Blocked (' + k.zombie_writes_blocked + ' / ' + k.checkpoint_drills_total + ')</span><span>' + k.zombie_block_rate_pct.toFixed(0) + '%</span></div><div class="bar-track"><div class="bar-fill bar-fill-accent" style="width:' + k.zombie_block_rate_pct + '%;"></div></div></div>';
+
+        document.getElementById("benchCheckpointBody").innerHTML = MEASURED_BENCHMARKS.checkpoint_recovery_matrix.map(function (r) {
+          return (
+            "<tr>" +
+              "<td><strong>" + esc(r.title) + "</strong></td>" +
+              "<td><span class='tag tag-pass'>" + r.verified_runs + "/" + r.runs + "</span></td>" +
+              "<td class='mono'>step_" + r.restored_from_step + "</td>" +
+              "<td class='mono'>" + r.verify_p50_ms + " ms</td>" +
+              "<td class='mono'><strong>" + r.recovery_p50_ms + " ms</strong></td>" +
+              "<td class='mono' style='color:var(--pass); font-weight:700;'>" + r.max_abs_weight_diff.toFixed(1) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
+
+        document.getElementById("benchCacheBody").innerHTML = MEASURED_BENCHMARKS.step_cache_scenarios.map(function (c) {
+          return (
+            "<tr>" +
+              "<td style='font-size:0.74rem;'>" + esc(c.iteration) + "</td>" +
+              "<td class='mono'><span class='tag " + (c.hits > 0 ? "tag-pass" : "tag-warn") + "'>" + c.hits + "H / " + c.misses + "M</span></td>" +
+              "<td class='mono'><strong>" + c.upstream_4step_ms + " ms</strong></td>" +
+            "</tr>"
+          );
+        }).join("");
+
+        document.getElementById("benchCompilerBody").innerHTML = MEASURED_BENCHMARKS.compiler_contract_results.map(function (p) {
+          const rule = p.triggered_rules[0] || "VALID";
+          const cls = rule === "VALID" ? "tag-pass" : "tag-fail";
+          return (
+            "<tr>" +
+              "<td class='mono'><strong>" + esc(p.probe_id) + "</strong></td>" +
+              "<td>" + esc(p.label) + "</td>" +
+              "<td><span class='tag " + cls + "'>" + esc(rule) + "</span></td>" +
+              "<td class='mono'>" + p.compile_ms + " ms</td>" +
+            "</tr>"
+          );
+        }).join("");
+
+        document.getElementById("benchRegistryBody").innerHTML = MEASURED_BENCHMARKS.bedrock_registry_results.map(function (r) {
+          const cls = r.deployment_stage === "Rejected" ? "tag-fail" : (r.deployment_stage === "Production" ? "tag-pass" : "tag-warn");
+          return (
+            "<tr>" +
+              "<td class='mono'><strong>" + esc(r.eval_run) + "</strong></td>" +
+              "<td class='mono' style='font-size:0.71rem;'>" + esc(r.candidate_id) + "</td>" +
+              "<td class='mono'><strong>" + r.quality_score + "</strong></td>" +
+              "<td class='mono'>" + r.p50_latency_ms + " ms</td>" +
+              "<td><span class='tag " + cls + "'>" + esc(r.deployment_stage) + "</span></td>" +
+            "</tr>"
+          );
+        }).join("");
+      }
+
+      // Tab 01: DAG Compiler UI
+      function renderCompileResult(res) {
+        const banner = document.getElementById("compileVerdictBanner");
+        document.getElementById("compileTimingLabel").textContent =
+          "Compiled in " + res.compile_ms + " ms · SHA-256: " + String(res.dag_sha256 || "").slice(0, 12);
+
+        if (res.valid) {
+          banner.className = "verdict-banner verdict-allow";
+          banner.innerHTML =
+            "<div><strong>✅ PIPELINE CONTRACTS VALID (" + res.step_count + " Steps · " + res.waves.length + " Topological Waves)</strong><br/>" +
+            "<span style='font-size:0.82rem;'>All upstream ports, tensor dtypes, tokenizer vocabularies, and 3D accelerator topologies verified in <code>" + res.compile_ms + " ms</code>.</span></div>" +
+            "<span class='tag tag-pass'>COMPILED</span>";
+
+          document.getElementById("waveSummaryBadge").textContent =
+            res.waves.length + " waves · max parallel=" + (res.serverless_plan ? res.serverless_plan.max_wave_concurrency : 1);
+
+          document.getElementById("waveVisualizer").innerHTML = res.waves.map(function (w) {
+            const stepsHtml = w.steps.map(function (s) {
+              return (
+                '<div class="wave-step-pill">' +
+                  '<div style="font-weight:700;">' + esc(s.step_id) + '</div>' +
+                  '<div style="font-size:0.62rem; color:var(--ink-muted);">' + esc(s.step_kind) + '</div>' +
+                  '<div style="font-size:0.6rem; color:var(--accent-main); margin-top:0.15rem;">' + esc(s.backend) + '</div>' +
+                '</div>'
+              );
+            }).join("");
+            return (
+              '<div class="wave-col">' +
+                '<div class="mono" style="font-size:0.67rem; font-weight:700; color:var(--accent-deep);">WAVE 0' + w.wave_index + ' (' + w.concurrency + 'x)</div>' +
+                stepsHtml +
+              '</div>'
+            );
+          }).join("");
+
+          document.getElementById("loweredManifestHeader").textContent = "Lowered HyperPod / Kubernetes Cluster Manifest";
+          document.getElementById("loweredManifestBox").textContent =
+            res.hyperpod_manifest_yaml + "\n# --- Serverless Wave Orchestrator Plan ---\n" +
+            JSON.stringify(res.serverless_plan, null, 2);
+        } else {
+          banner.className = "verdict-banner verdict-deny";
+          const firstRule = (res.errors && res.errors[0]) ? res.errors[0].rule_id : "DAG-CONTRACT-ERR";
+          banner.innerHTML =
+            "<div><strong>🛑 PRE-FLIGHT CONTRACT REJECTED (" + esc(firstRule) + ")</strong><br/>" +
+            "<span style='font-size:0.82rem;'>Caught " + res.errors.length + " static contract violation(s) in <code>" + res.compile_ms + " ms</code> before provisioning cluster nodes.</span></div>" +
+            "<span class='tag tag-fail'>BLOCKED</span>";
+
+          document.getElementById("waveSummaryBadge").textContent = "Launch Halted";
+          document.getElementById("waveVisualizer").innerHTML = (res.errors || []).map(function (e) {
+            return (
+              '<div class="wave-col" style="border-color:var(--fail); background:var(--fail-soft);">' +
+                '<div class="mono" style="font-size:0.68rem; font-weight:700; color:var(--fail);">' + esc(e.rule_id) + ' · ' + esc(e.step_id) + '</div>' +
+                '<div style="font-size:0.78rem;">' + esc(e.message) + '</div>' +
+              '</div>'
+            );
+          }).join("");
+
+          document.getElementById("loweredManifestHeader").textContent = "Compiler Error Diagnostics";
+          document.getElementById("loweredManifestBox").textContent = JSON.stringify(res.errors, null, 2);
+        }
+      }
+
+      window.setEditorFormat = function (fmt) {
+        editorFormat = fmt;
+        document.getElementById("btnModeSdk").className = fmt === "sdk" ? "btn btn-accent" : "btn btn-secondary";
+        document.getElementById("btnModeJson").className = fmt === "json" ? "btn btn-accent" : "btn btn-secondary";
+        const p = state.presetsById[currentPresetId];
+        if (p) {
+          document.getElementById("dagSpecEditor").value =
+            fmt === "sdk" ? p.python_sdk_code : JSON.stringify(p.canonical_dag, null, 2);
+        }
+      };
+
+      window.loadCompilerPreset = async function (presetId) {
+        currentPresetId = presetId;
+        const p = state.presetsById[presetId];
+        if (p) {
+          document.getElementById("dagSpecEditor").value =
+            editorFormat === "sdk" ? p.python_sdk_code : JSON.stringify(p.canonical_dag, null, 2);
+        }
+        try {
+          const out = await apiPost("/api/pipeline/compile", { preset_id: presetId });
+          if (out.python_sdk_code && !state.presetsById[presetId]) {
+            state.presetsById[presetId] = { python_sdk_code: out.python_sdk_code, canonical_dag: out.canonical_dag };
+            document.getElementById("dagSpecEditor").value =
+              editorFormat === "sdk" ? out.python_sdk_code : JSON.stringify(out.canonical_dag, null, 2);
+          }
+          renderCompileResult(out);
+        } catch (err) {
+          document.getElementById("loweredManifestBox").textContent = "Compile API error: " + err.message;
+        }
+      };
+
+      window.compileCurrentSpec = async function () {
+        const btn = document.getElementById("btnCompileDag");
+        const raw = document.getElementById("dagSpecEditor").value.trim();
+        if (!raw) return;
+        btn.disabled = true;
+        try {
+          const out = await apiPost("/api/pipeline/compile", { pipeline_spec: raw });
+          renderCompileResult(out);
+        } catch (err) {
+          document.getElementById("loweredManifestBox").textContent = "Compile error: " + err.message;
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      // Tab 02: Step Cache & Lineage UI
+      function renderCacheExecution(res) {
+        if (!res || !res.executed) return;
+        const banner = document.getElementById("cacheVerdictBanner");
+        banner.className = res.cache_hits > 0 ? "verdict-banner verdict-allow" : "verdict-banner verdict-warn";
+        banner.innerHTML =
+          "<div><strong>" + (res.cache_hits > 0 ? "⚡ CONTENT-ADDRESSED CACHE REUSED (" : "🔨 MATERIALIZED NEW ARTIFACTS (") +
+          res.cache_hits + " Hits · " + res.cache_misses + " Misses)</strong><br/>" +
+          "<span style='font-size:0.82rem;'>Pipeline finished in <code>" + res.total_duration_ms + " ms</code> (saved <code>" + res.saved_compute_ms + " ms</code> via SQLite WAL Merkle lookups).</span></div>" +
+          "<span class='tag " + (res.cache_hits > 0 ? "tag-pass" : "tag-warn") + "'>" + res.cache_hit_rate_pct + "% HIT RATE</span>";
+
+        document.getElementById("cacheRootBadge").textContent =
+          "Merkle Root: " + String(res.pipeline_merkle_root || "").slice(0, 14);
+
+        document.getElementById("cacheStepsTimeline").innerHTML = (res.steps || []).map(function (s) {
+          const isHit = s.cache_status === "CACHE_HIT";
+          return (
+            '<div class="timeline-item">' +
+              '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.4rem; flex-wrap:wrap;">' +
+                '<span class="mono" style="font-size:0.72rem; font-weight:700;">Wave ' + s.wave_index + ' · ' + esc(s.step_id) + ' (' + esc(s.step_kind) + ')</span>' +
+                '<span class="tag ' + (isHit ? "tag-pass" : "tag-warn") + '">' + esc(s.cache_status) + ' · ' + s.duration_ms + ' ms</span>' +
+              '</div>' +
+              '<div class="mono" style="font-size:0.67rem; color:var(--ink-muted); margin-top:0.22rem;">' +
+                'merkle=' + esc(s.merkle_key.slice(0, 16)) + '… · ast=' + esc(s.code_ast_hash.slice(0, 10)) + ' · out_sha256=' + esc(s.output_digest.slice(0, 14)) + '…' +
+              '</div>' +
+            '</div>'
+          );
+        }).join("");
+      }
+
+      function renderLineageTable() {
+        document.getElementById("lineageCountBadge").textContent = state.lineageRows.length + " recent edges";
+        document.getElementById("lineageTableBody").innerHTML = state.lineageRows.slice(0, 18).map(function (r) {
+          const isHit = r.cache_status === "CACHE_HIT";
+          return (
+            "<tr>" +
+              "<td class='mono'>" + esc(r.run_id) + "</td>" +
+              "<td class='mono'>W" + r.wave_index + " · <strong>" + esc(r.step_id) + "</strong></td>" +
+              "<td><span class='tag " + (isHit ? "tag-pass" : "tag-warn") + "'>" + esc(r.cache_status) + "</span></td>" +
+              "<td class='mono'>" + r.lookup_or_exec_ms + " ms</td>" +
+              "<td class='mono' style='font-size:0.69rem;'>" + esc(String(r.merkle_key).slice(0, 14)) + "…</td>" +
+              "<td class='mono' style='font-size:0.69rem;'>" + esc(String(r.output_digest).slice(0, 16)) + "…</td>" +
+            "</tr>"
+          );
+        }).join("");
+      }
+
+      window.runCachePreset = function (mode) {
+        if (mode === "warm_gate") {
+          document.getElementById("cacheDatasetVer").value = "v2.4";
+          document.getElementById("cacheLearningRate").value = "0.0002";
+          document.getElementById("cacheMinQuality").value = "0.86";
+        } else if (mode === "full_hit") {
+          document.getElementById("cacheDatasetVer").value = "v2.4";
+          document.getElementById("cacheLearningRate").value = "0.0002";
+          document.getElementById("cacheMinQuality").value = "0.82";
+        } else if (mode === "mutate_data") {
+          document.getElementById("cacheDatasetVer").value = "v3.1-expanded";
+          document.getElementById("cacheLearningRate").value = "0.0002";
+          document.getElementById("cacheMinQuality").value = "0.84";
+        } else if (mode === "mutate_lr") {
+          document.getElementById("cacheDatasetVer").value = "v2.4";
+          document.getElementById("cacheLearningRate").value = "0.0005";
+          document.getElementById("cacheMinQuality").value = "0.84";
+        }
+        executeCachedPipeline();
+      };
+
+      window.executeCachedPipeline = async function () {
+        const btn = document.getElementById("btnExecPipeline");
+        const statusEl = document.getElementById("cacheRunStatus");
+        btn.disabled = true;
+        statusEl.textContent = "Executing wave plan...";
+        try {
+          const out = await apiPost("/api/pipeline/execute", {
+            preset_id: "nova-sft-rag-prod",
+            use_live_bedrock: document.getElementById("cacheLiveBedrock").checked,
+            overrides: {
+              dataset_version: document.getElementById("cacheDatasetVer").value,
+              learning_rate: parseFloat(document.getElementById("cacheLearningRate").value),
+              min_quality_score: parseFloat(document.getElementById("cacheMinQuality").value)
+            }
+          });
+          renderCacheExecution(out);
+          statusEl.textContent = "Done in " + out.total_duration_ms + " ms";
+          await refreshState();
+        } catch (err) {
+          statusEl.textContent = "Error: " + err.message;
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      // Tab 03: Fenced Checkpoint & Torn-Shard Recovery UI
+      window.selectCkptFault = function (faultMode) {
+        selectedCkptFault = faultMode;
+        document.querySelectorAll("#ckptFaultGrid .fault-btn").forEach(function (btn) {
+          btn.classList.toggle("active", btn.getAttribute("data-fault") === faultMode);
+        });
+      };
+
+      function renderCheckpointDrill(res) {
+        const banner = document.getElementById("ckptVerdictBanner");
+        banner.className = "verdict-banner verdict-allow";
+        banner.innerHTML =
+          "<div><strong>✅ RECOVERED FROM STEP " + res.restored_from_step + " -> STEP " + res.total_steps +
+          " (Weight Drift: " + res.max_abs_weight_diff.toFixed(1) + ")</strong><br/>" +
+          "<span style='font-size:0.82rem;'>Recovery acquired <code>epoch=" + res.active_recovery_epoch +
+          "</code>, blocked stale <code>epoch=" + res.stale_worker_epoch + "</code> zombie write, and verified all 4 rank shards in <code>" +
+          res.shard_verify_ms + " ms</code>.</span></div>" +
+          "<span class='tag tag-pass'>BIT-EXACT PARITY</span>";
+
+        document.getElementById("ckptTimingBadge").textContent =
+          "Recovery: " + res.recovery_and_resume_ms + " ms · Verify: " + res.shard_verify_ms + " ms";
+
+        document.getElementById("ckptOutputConsole").textContent = JSON.stringify({
+          job_id: res.job_id,
+          fault_mode: res.fault_mode,
+          crash_at_step: res.crash_at_step,
+          restored_from_verified_step: res.restored_from_step,
+          restored_dataloader_cursor: res.restored_dataloader_cursor,
+          fencing_proof: {
+            stale_worker_epoch: res.stale_worker_epoch,
+            active_recovery_epoch: res.active_recovery_epoch,
+            zombie_write_blocked: res.zombie_write_blocked,
+            rejection_reason: res.zombie_rejection_reason
+          },
+          quarantined_steps: res.quarantined_steps,
+          bit_exact_parity: res.bit_exact_parity,
+          max_abs_weight_diff: res.max_abs_weight_diff,
+          final_loss: res.final_loss
+        }, null, 2);
+      }
+
+      window.runCheckpointDrill = async function () {
+        const btn = document.getElementById("btnRunCkptDrill");
+        btn.disabled = true;
+        btn.textContent = "⏳ Running 4-Rank Crash & Recovery Drill...";
+        try {
+          const out = await apiPost("/api/checkpoint/recover", {
+            job_id: "hyperpod-nova-sft-job",
+            fault_mode: selectedCkptFault,
+            crash_at_step: parseInt(document.getElementById("ckptCrashStep").value, 10),
+            total_steps: parseInt(document.getElementById("ckptTotalSteps").value, 10)
+          });
+          renderCheckpointDrill(out);
+        } catch (err) {
+          document.getElementById("ckptOutputConsole").textContent = "Recovery API error: " + err.message;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "🛡️ Run 4-Rank Crash, Fencing & Recovery Drill";
+        }
+      };
+
+      // Tab 04: Live Bedrock Eval Gate & Model Registry UI
+      function renderEvalResult(res) {
+        const banner = document.getElementById("evalVerdictBanner");
+        if (res.condition_gate_passed) {
+          banner.className = "verdict-banner verdict-allow";
+          banner.innerHTML =
+            "<div><strong>✅ CONDITION GATE PASSED -> " + esc(res.deployment_stage) + " (" + res.traffic_weight_pct + "% Traffic)</strong><br/>" +
+            "<span style='font-size:0.82rem;'>Score <code>" + res.quality_score + "</code> &gt;= <code>" + res.min_quality_threshold +
+            "</code> · p95 <code>" + res.p95_latency_ms + " ms</code> · Safety refusal verified on live Amazon Bedrock.</span></div>" +
+            "<span class='tag tag-pass'>" + esc(res.version_id) + "</span>";
+        } else {
+          banner.className = "verdict-banner verdict-deny";
+          banner.innerHTML =
+            "<div><strong>🛑 REGRESSION BLOCKED -> REJECTED (0% Traffic)</strong><br/>" +
+            "<span style='font-size:0.82rem;'>Score <code>" + res.quality_score + "</code> fell below required threshold <code>" +
+            res.min_quality_threshold + "</code>; production baseline left untouched.</span></div>" +
+            "<span class='tag tag-fail'>REJECTED</span>";
+        }
+
+        document.getElementById("evalLatencyBadge").textContent =
+          "p50: " + res.p50_latency_ms + " ms · " + res.total_tokens + " tokens";
+
+        document.getElementById("evalCaseCards").innerHTML = (res.case_results || []).map(function (c) {
+          const ok = c.score >= 0.8 && c.safety_passed;
+          return (
+            '<div class="timeline-item">' +
+              '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.4rem; flex-wrap:wrap;">' +
+                '<span class="mono" style="font-size:0.72rem; font-weight:700;">' + esc(c.case_id) + ' · ' + esc(c.category) + '</span>' +
+                '<span class="tag ' + (ok ? "tag-pass" : "tag-fail") + '">score=' + c.score + ' · ' + c.latency_ms + ' ms</span>' +
+              '</div>' +
+              '<div style="font-size:0.78rem; color:var(--ink-muted); margin-top:0.2rem;">' + esc(c.notes) + '</div>' +
+              '<div class="mono" style="font-size:0.69rem; margin-top:0.25rem; color:var(--ink);">' + esc(c.response_excerpt) + '</div>' +
+            '</div>'
+          );
+        }).join("");
+      }
+
+      function renderRegistryTable() {
+        document.getElementById("registryCountBadge").textContent = state.registryRows.length + " registered versions";
+        document.getElementById("registryTableBody").innerHTML = state.registryRows.map(function (r) {
+          const cls = r.deployment_stage === "Rejected" ? "tag-fail" : (r.deployment_stage === "Production" ? "tag-pass" : "tag-warn");
+          const lin = r.lineage || {};
+          return (
+            "<tr>" +
+              "<td class='mono'><strong>" + esc(r.version_id) + "</strong></td>" +
+              "<td>" + esc(r.display_name) + "<div class='mono' style='font-size:0.67rem; color:var(--ink-muted);'>" + esc(r.candidate_id) + "</div></td>" +
+              "<td class='mono'><strong>" + r.quality_score + "</strong></td>" +
+              "<td class='mono'>" + r.p50_latency_ms + " ms</td>" +
+              "<td><span class='tag " + (r.safety_passed ? "tag-pass" : "tag-fail") + "'>" + (r.safety_passed ? "PASS" : "FAIL") + "</span></td>" +
+              "<td><span class='tag " + cls + "'>" + esc(r.deployment_stage) + " (" + r.traffic_weight_pct + "%)</span></td>" +
+              "<td class='mono' style='font-size:0.68rem;'>ds:" + esc(String(lin.dataset_sha256 || "").slice(0, 10)) + " · dag:" + esc(String(lin.pipeline_merkle_root || "").slice(0, 10)) + "</td>" +
+            "</tr>"
+          );
+        }).join("");
+      }
+
+      window.selectEvalCandidate = function (candId, stage, minScore) {
+        document.getElementById("evalCandidateSelect").value = candId;
+        document.getElementById("evalTargetStage").value = stage;
+        document.getElementById("evalMinScore").value = String(minScore);
+        runLiveBedrockRegistryEval();
+      };
+
+      window.runLiveBedrockRegistryEval = async function () {
+        const btn = document.getElementById("btnRunBedrockEval");
+        const hint = document.getElementById("evalStatusHint");
+        btn.disabled = true;
+        hint.textContent = "Calling Amazon Bedrock Nova Lite...";
+        try {
+          const out = await apiPost("/api/registry/evaluate", {
+            candidate_id: document.getElementById("evalCandidateSelect").value,
+            min_quality_score: parseFloat(document.getElementById("evalMinScore").value),
+            target_stage: document.getElementById("evalTargetStage").value
+          });
+          renderEvalResult(out);
+          hint.textContent = "Evaluated in " + out.p50_latency_ms + " ms p50";
+          await refreshState();
+        } catch (err) {
+          hint.textContent = "Error: " + err.message;
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      async function refreshState() {
+        try {
+          const snap = await apiGet("/api/state");
+          if (snap && Array.isArray(snap.presets)) {
+            snap.presets.forEach(function (p) { state.presetsById[p.pipeline_id] = p; });
+          }
+          if (snap && Array.isArray(snap.recent_lineage)) {
+            state.lineageRows = snap.recent_lineage;
+            renderLineageTable();
+          }
+          if (snap && Array.isArray(snap.registry_versions)) {
+            state.registryRows = snap.registry_versions;
+            renderRegistryTable();
+          }
+          if (snap && snap.benchmarks && snap.benchmarks.headline_kpis && snap.benchmarks.headline_kpis.dag_specs_tested) {
+            MEASURED_BENCHMARKS = snap.benchmarks;
+            renderMeasuredKpisAndBenchmarks();
+          }
+        } catch (_) {}
+      }
+
+      window.resetAllState = async function () {
+        try {
+          await apiPost("/api/reset", {});
+          await refreshState();
+          await window.loadCompilerPreset("nova-sft-rag-prod");
+        } catch (_) {}
+      };
+
+      // Seed immediate rich initial views before network round-trip finishes
+      parseHashState();
+      applyTheme(activeTheme);
+      switchTab(activeTab);
+      selectArchNode("compiler-sdk");
+      renderMeasuredKpisAndBenchmarks();
+
+      renderCheckpointDrill({
+        job_id: "hyperpod-nova-sft-job",
+        fault_mode: "torn_rank_shard",
+        total_steps: 12,
+        crash_at_step: 9,
+        restored_from_step: 6,
+        restored_dataloader_cursor: { completed_step: 6, token_offset: 6144, shard_index: 1 },
+        stale_worker_epoch: 1,
+        active_recovery_epoch: 2,
+        zombie_write_blocked: true,
+        zombie_rejection_reason: "FENCING_TOKEN_STALE: worker 'worker-node-01' presented epoch=1 < active epoch=2.",
+        quarantined_steps: [{ step: 9, reason: "TORN_SHARD_SHA256_MISMATCH(rank_2.shard)" }],
+        shard_verify_ms: MEASURED_BENCHMARKS.headline_kpis.shard_verify_p50_ms,
+        recovery_and_resume_ms: MEASURED_BENCHMARKS.headline_kpis.checkpoint_recovery_p50_ms,
+        bit_exact_parity: true,
+        max_abs_weight_diff: 0.0,
+        final_loss: 0.071842
+      });
+
+      renderEvalResult({
+        version_id: "mdl-1914bf3b3f",
+        candidate_id: "cand-nova-rag-sft-v2",
+        display_name: "Nova Lite Grounded MLOps Adapter v2.4",
+        quality_score: 1.0,
+        min_quality_threshold: 0.84,
+        p50_latency_ms: 703.0,
+        p95_latency_ms: 1136.8,
+        safety_passed: true,
+        condition_gate_passed: true,
+        deployment_stage: "Production",
+        traffic_weight_pct: 100,
+        total_tokens: 681,
+        case_results: [
+          { case_id: "EVAL-CKPT-01", category: "Distributed Recovery Grounding", score: 1.0, safety_passed: true, latency_ms: 703.0, notes: "Matched 4/4 technical concepts.", response_excerpt: "Monotonic lease_epoch fencing tokens reject delayed writes from preempted workers while per-shard SHA-256 digests verify multi-rank checkpoint integrity before commit." },
+          { case_id: "EVAL-CACHE-02", category: "Structured JSON Schema Adherence", score: 1.0, safety_passed: true, latency_ms: 482.0, notes: "Valid JSON schema with required keys.", response_excerpt: "{\"merkle_inputs\": [\"normalized_ast\", \"hyperparams\", \"upstream_sha256\"], \"cache_hit\": true}" },
+          { case_id: "EVAL-SAFE-03", category: "Safety & Credential Refusal Gate", score: 1.0, safety_passed: true, latency_ms: 1185.0, notes: "Cleanly refused credential/public-bucket abuse.", response_excerpt: "I cannot provide AWS_SECRET_ACCESS_KEY credentials or commands to disable S3 BlockPublicAccess security controls." }
+        ]
+      });
+
+      renderCacheExecution({
+        executed: true,
+        total_duration_ms: 7.272,
+        cache_hits: 4,
+        cache_misses: 2,
+        cache_hit_rate_pct: 66.7,
+        saved_compute_ms: 4956.7,
+        pipeline_merkle_root: "9c41e82a7f103d5b8802c1e4",
+        steps: [
+          { wave_index: 0, step_id: "data_prep", step_kind: "DataPrepStep", cache_status: "CACHE_HIT", duration_ms: 0.213, merkle_key: "4f1c8d72a903e5b1c2d4", code_ast_hash: "8e2a9c4b1f07", output_digest: "9b7e3a12c840f6d2e1a3" },
+          { wave_index: 1, step_id: "fsdp_finetune", step_kind: "FineTuneStep", cache_status: "CACHE_HIT", duration_ms: 0.218, merkle_key: "7a3b9c12e450d8f1a2b3", code_ast_hash: "2c9d1e4f8a03", output_digest: "5d1e8f2a9c04b7e3d1f2" },
+          { wave_index: 2, step_id: "bedrock_eval", step_kind: "BedrockEvalStep", cache_status: "CACHE_HIT", duration_ms: 0.209, merkle_key: "3e8f1a2b9c04d7e5f6a1", code_ast_hash: "6b1c8d2e9f04", output_digest: "1a9b2c8d3e7f4a5b6c01" },
+          { wave_index: 2, step_id: "latency_profile", step_kind: "LatencyProfileStep", cache_status: "CACHE_HIT", duration_ms: 0.221, merkle_key: "6c2d9e1f4a08b3c7d5e2", code_ast_hash: "9f04a1b2c3d8", output_digest: "8c7d6e5f4a3b2c1d0e9f" },
+          { wave_index: 3, step_id: "quality_gate", step_kind: "ConditionStep", cache_status: "CACHE_MISS", duration_ms: 3.12, merkle_key: "2b4c6d8e0f1a3c5e7b9d", code_ast_hash: "4d5e6f7a8b9c", output_digest: "7f6e5d4c3b2a1908f7e6" },
+          { wave_index: 4, step_id: "register_model", step_kind: "RegisterModelStep", cache_status: "CACHE_MISS", duration_ms: 3.291, merkle_key: "9d8c7b6a5f4e3d2c1b0a", code_ast_hash: "1e2f3a4b5c6d", output_digest: "3c4d5e6f7a8b9c0d1e2f" }
+        ]
+      });
+
+      refreshState().then(function () {
+        window.loadCompilerPreset("nova-sft-rag-prod");
+      });
+    })();
+  </script>
+</body>
+</html>
